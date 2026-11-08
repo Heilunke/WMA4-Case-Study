@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Reports · E-Ticket</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+<link href="../css/style.css" rel="stylesheet"></head>
+<body data-root="../" data-role="admin" data-page="reports"><div id="app"></div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="../js/store.js"></script><script src="../js/app.js"></script>
+<script>
+const v = App.shell('admin', 'reports'); if (v) {
+  const r = Store.report(), t = r.totals, b = r.byStatus, rev = r.perEvent.reduce((n, p) => n + p.revenue, 0);
+  v.innerHTML = `<div class="page-head"><h1>Reports &amp; analytics</h1><button class="btn btn-outline-secondary" id="csv"><i class="bi bi-download me-1"></i>Export CSV</button></div>
+    <div class="row g-3 mb-4">${[['Total events', t.events], ['Total reservations', t.reservations], ['Registered users', t.users], ['Payments recorded', '₱' + rev.toLocaleString('en-PH', { minimumFractionDigits: 2 })]].map(([l, n]) => `<div class="col-sm-6 col-xl-3"><div class="card stat"><div class="label">${l}</div><div class="value">${n}</div></div></div>`).join('')}</div>
+    <div class="row g-4 mb-4"><div class="col-lg-5"><div class="card p-3"><h2 class="h5">Reservation status</h2><div style="height:260px"><canvas id="donut" role="img" aria-label="Doughnut chart of reservation status"></canvas></div>
+      <ul class="list-unstyled small mt-3 mb-0 d-flex justify-content-around"><li>Confirmed: <strong>${b.confirmed}</strong></li><li>Pending: <strong>${b.pending}</strong></li><li>Cancelled: <strong>${b.cancelled}</strong></li></ul></div></div>
+      <div class="col-lg-7"><div class="card p-3"><h2 class="h5">Tickets reserved vs capacity</h2><div style="height:300px"><canvas id="bars" role="img" aria-label="Bar chart of tickets reserved versus capacity per event"></canvas></div></div></div></div>
+    <div class="card p-3"><h2 class="h5">Per-event summary</h2><div class="table-wrap"><table class="table align-middle mb-0"><thead><tr><th>Event</th><th>Date</th><th>Capacity</th><th>Reserved</th><th>Confirmed</th><th>Checked in</th><th>Paid revenue</th></tr></thead><tbody>
+      ${r.perEvent.map(p => `<tr><td class="fw-semibold">${App.esc(p.event.event_name)}</td><td>${App.fmtDate(p.event.event_date)}</td><td>${p.capacity}</td><td>${p.reserved}</td><td>${p.confirmed}</td><td>${p.checkedIn}</td><td>${p.revenue ? App.peso(p.revenue) : '—'}</td></tr>`).join('')}</tbody></table></div></div>`;
+  if (window.Chart) {
+    new Chart(document.getElementById('donut'), { type: 'doughnut', data: { labels: ['Confirmed', 'Pending', 'Cancelled'], datasets: [{ data: [b.confirmed, b.pending, b.cancelled], backgroundColor: ['#1a8f4a', '#f59e0b', '#d13a3a'] }] }, options: { maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } }, cutout: '62%' } });
+    new Chart(document.getElementById('bars'), { type: 'bar', data: { labels: r.perEvent.map(p => p.event.event_name), datasets: [{ label: 'Reserved', data: r.perEvent.map(p => p.reserved), backgroundColor: '#2547d0' }, { label: 'Capacity', data: r.perEvent.map(p => p.capacity), backgroundColor: '#c9d1ea' }] }, options: { maintainAspectRatio: false, scales: { y: { beginAtZero: true } } } });
+  }
+  document.getElementById('csv').onclick = () => {
+    const rows = [['Event', 'Date', 'Capacity', 'Reserved', 'Confirmed', 'Checked in', 'Paid revenue'], ...r.perEvent.map(p => [p.event.event_name, p.event.event_date, p.capacity, p.reserved, p.confirmed, p.checkedIn, p.revenue])];
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([rows.map(x => x.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n')], { type: 'text/csv' })); a.download = 'eticket-report.csv'; a.click();
+  };
+}
+</script></body></html>

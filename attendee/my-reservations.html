@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>My Reservations · E-Ticket</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+<link href="../css/style.css" rel="stylesheet"></head>
+<body data-root="../" data-role="attendee" data-page="reservations"><div id="app"></div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="../js/store.js"></script><script src="../js/app.js"></script>
+<script>
+const v = App.shell('attendee', 'reservations'); if (v) {
+  const u = App.user(); let filter = 'all', q = '';
+  v.innerHTML = `<div class="page-head"><h1>My reservations</h1><a class="btn btn-brand" href="events.html"><i class="bi bi-plus-lg me-1"></i>New reservation</a></div>
+    <div class="card p-3"><div class="d-flex flex-wrap gap-2 justify-content-between mb-3">
+      <div class="btn-group" id="filters" role="group" aria-label="Filter by status">${['all', 'confirmed', 'pending', 'cancelled'].map(s => `<button type="button" class="btn btn-outline-secondary ${s === 'all' ? 'active' : ''}" data-f="${s}">${s[0].toUpperCase() + s.slice(1)}</button>`).join('')}</div>
+      <input id="q" class="form-control" style="max-width:280px" placeholder="Search event or RSV code" aria-label="Search"></div>
+      <div class="table-wrap"><table class="table align-middle mb-0"><thead><tr><th>Code</th><th>Event</th><th>Ticket</th><th>Qty</th><th>Total</th><th>Payment</th><th>Status</th><th></th></tr></thead><tbody id="rows"></tbody></table></div></div>
+    <div class="modal fade" id="detail" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content" id="detailBody"></div></div></div>`;
+  const modal = new bootstrap.Modal(document.getElementById('detail'));
+  const mine = () => Store.reservations().filter(r => r.user_ID === u.user_ID).map(Store.resView);
+  const draw = () => {
+    const list = mine().filter(r => (filter === 'all' || r.reservation_status === filter) && (!q || (r.event.event_name + r.code).toLowerCase().includes(q)));
+    document.getElementById('rows').innerHTML = list.length ? list.map(r => `<tr><td class="fw-semibold">${r.code}</td><td>${App.esc(r.event.event_name)}<div class="small text-muted-2">${App.fmtDate(r.event.event_date)}</div></td><td>${App.esc(r.ticket.type_name)}</td><td>${r.quantity}</td><td>${App.peso(r.total_amount)}</td><td>${App.pill(r.payment.payment_status)}</td><td>${App.pill(r.reservation_status)}</td>
+      <td class="text-end text-nowrap"><button class="btn btn-sm btn-outline-secondary" data-view="${r.reservation_ID}">Details</button>
+      ${r.reservation_status === 'confirmed' ? `<a class="btn btn-sm btn-accent ms-1" href="ticket.html?id=${r.reservation_ID}"><i class="bi bi-qr-code"></i> E-ticket</a>` : ''}</td></tr>`).join('') : '<tr><td colspan="8" class="text-center text-muted-2 py-4">No reservations found.</td></tr>';
+    document.querySelectorAll('[data-view]').forEach(b => b.onclick = () => open(+b.dataset.view));
+  };
+  const open = id => {
+    const r = Store.resView(Store.resById(id));
+    document.getElementById('detailBody').innerHTML = `<div class="modal-header"><h2 class="modal-title h5">${r.code} · ${App.esc(r.event.event_name)}</h2><button class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+      <div class="modal-body"><div class="d-flex gap-2 mb-3">${App.pill(r.reservation_status)}${App.pill(r.payment.payment_status)}<span class="small text-muted-2 align-self-center">Reserved ${App.fmtDT(r.reservation_date)}</span></div>
+      <p class="small mb-3">${App.fmtDate(r.event.event_date)} · ${App.fmtTime(r.event.event_time)} · ${App.esc(r.event.venue)}<br>${r.quantity} × ${App.esc(r.ticket.type_name)} = <strong>${App.peso(r.total_amount)}</strong> · ${App.esc(r.payment.payment_method)}</p>
+      <table class="table table-sm"><thead><tr><th>Attendee</th><th>Contact</th><th>Ticket code</th><th>Entry</th></tr></thead><tbody>${r.attendees.map(a => `<tr><td>${App.esc(a.full_name)}</td><td>${App.esc(a.contact_number || '—')}</td><td class="font-monospace small">${a.ticket_code || '<span class="text-muted-2">Issued on confirmation</span>'}</td><td>${a.status ? App.pill('checked').replace('Checked', 'Checked in') : '—'}</td></tr>`).join('')}</tbody></table></div>
+      <div class="modal-footer">${r.reservation_status === 'pending' ? `<button class="btn btn-outline-danger me-auto" id="cancelBtn">Cancel reservation</button>` : ''}${r.reservation_status === 'confirmed' ? `<a class="btn btn-accent" href="ticket.html?id=${r.reservation_ID}">View e-tickets</a>` : ''}<button class="btn btn-secondary" data-bs-dismiss="modal">Close</button></div>`;
+    const cb = document.getElementById('cancelBtn');
+    if (cb) cb.onclick = () => { if (confirm('Cancel this reservation? Your seats will be released.')) { try { Store.cancel(id); modal.hide(); draw(); App.toast('Reservation cancelled.', 'secondary'); } catch (e) { App.toast(e.message, 'danger'); } } };
+    modal.show();
+  };
+  document.querySelectorAll('#filters button').forEach(b => b.onclick = () => { filter = b.dataset.f; document.querySelectorAll('#filters button').forEach(x => x.classList.toggle('active', x === b)); draw(); });
+  document.getElementById('q').oninput = e => { q = e.target.value.toLowerCase(); draw(); };
+  draw(); App.showFlash();
+}
+</script></body></html>

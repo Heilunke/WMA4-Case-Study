@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sign in · E-Ticket</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+<link href="css/style.css" rel="stylesheet"></head>
+<body data-root="">
+<div class="auth-wrap"><div class="auth-ticket">
+  <section class="auth-hero">
+    <div class="d-flex align-items-center gap-2 fs-4 fw-bold"><span class="brand-mark"><i class="bi bi-ticket-perforated-fill"></i></span>E-Ticket</div>
+    <div><div class="admit">Admit one · Admin or Attendee</div><h1>Reserve. Confirm. Walk in with your QR.</h1>
+      <ul class="mt-4"><li><i class="bi bi-check2-circle me-2"></i>Browse events and see live ticket availability</li>
+      <li><i class="bi bi-check2-circle me-2"></i>Reserve for a group, with one e-ticket per attendee</li>
+      <li><i class="bi bi-check2-circle me-2"></i>Administrators confirm reservations and validate tickets at the door</li></ul></div>
+    <div><div class="barcode light mb-2" aria-hidden="true"></div><div class="small text-white-50">WMA4 – Advanced Web Development · College of Computer Studies, Tarlac State University</div></div>
+  </section>
+  <section class="auth-card"><div class="inner">
+    <ul class="nav nav-pills mb-4" role="tablist">
+      <li class="nav-item"><button class="nav-link active" data-bs-toggle="pill" data-bs-target="#loginPane" type="button" role="tab">Log in</button></li>
+      <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" data-bs-target="#registerPane" type="button" role="tab">Create attendee account</button></li>
+    </ul>
+    <div id="msg" class="alert alert-danger d-none" role="alert"></div>
+    <div class="tab-content">
+      <div class="tab-pane fade show active" id="loginPane" role="tabpanel">
+        <h2 class="h4 mb-3">Welcome back</h2>
+        <form id="loginForm" novalidate>
+          <div class="mb-3"><label class="form-label" for="lEmail">Email</label><input class="form-control" id="lEmail" type="email" autocomplete="username" required></div>
+          <div class="mb-3"><label class="form-label" for="lPass">Password</label><input class="form-control" id="lPass" type="password" autocomplete="current-password" required></div>
+          <button class="btn btn-brand w-100 py-2">Log in</button>
+        </form>
+        <div class="demo-box mt-4"><strong>Demo accounts</strong><br>Administrator: admin@eticket.test / admin123<br>Attendee: attendee@eticket.test / attendee123
+          <div class="mt-2 d-flex gap-2"><button class="btn btn-sm btn-outline-primary" data-fill="admin">Use admin</button><button class="btn btn-sm btn-outline-primary" data-fill="attendee">Use attendee</button></div></div>
+      </div>
+      <div class="tab-pane fade" id="registerPane" role="tabpanel">
+        <h2 class="h4 mb-1">Join as an attendee</h2>
+        <p class="text-muted-2 small">Public sign-up creates an Attendee account only. Administrator accounts are assigned by an existing Administrator.</p>
+        <form id="regForm" novalidate>
+          <div class="mb-3"><label class="form-label" for="rName">Full name</label><input class="form-control" id="rName" autocomplete="name" required></div>
+          <div class="mb-3"><label class="form-label" for="rEmail">Email</label><input class="form-control" id="rEmail" type="email" autocomplete="email" required></div>
+          <div class="mb-3"><label class="form-label" for="rPass">Password</label><input class="form-control" id="rPass" type="password" minlength="6" autocomplete="new-password" required><div class="form-text">At least 6 characters.</div></div>
+          <button class="btn btn-brand w-100 py-2">Create account</button>
+        </form>
+      </div>
+    </div>
+  </div></section>
+</div></div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="js/store.js"></script><script src="js/app.js"></script>
+<script>
+const u0 = App.user(); if (u0) location.replace(App.home(u0));
+const msg = document.getElementById('msg');
+const fail = e => { msg.textContent = e.message; msg.classList.remove('d-none'); };
+const go = u => { App.setUser(u); location.href = App.home(u); };
+document.getElementById('loginForm').onsubmit = ev => { ev.preventDefault(); try { go(Store.login(lEmail.value, lPass.value)); } catch (e) { fail(e); } };
+document.getElementById('regForm').onsubmit = ev => { ev.preventDefault(); try { go(Store.register(rName.value, rEmail.value, rPass.value)); } catch (e) { fail(e); } };
+document.querySelectorAll('[data-fill]').forEach(b => b.onclick = () => { const a = b.dataset.fill === 'admin'; lEmail.value = a ? 'admin@eticket.test' : 'attendee@eticket.test'; lPass.value = a ? 'admin123' : 'attendee123'; });
+</script></body></html>
