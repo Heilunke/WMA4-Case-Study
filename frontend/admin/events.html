@@ -9,8 +9,8 @@
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="../js/store.js"></script><script src="../js/app.js"></script>
-<script>
-const v = App.shell('admin', 'events'); if (v) {
+<script type="module">
+const v = await App.shell('admin', 'events'); if (v) {
   const $ = id => document.getElementById(id);
   v.innerHTML = `<div class="page-head"><h1>Manage events</h1><button class="btn btn-brand" id="newBtn"><i class="bi bi-plus-lg me-1"></i>Create event</button></div>
     <div class="card p-3"><div class="table-wrap"><table class="table align-middle mb-0"><thead><tr><th>Event</th><th>Date &amp; time</th><th>Venue</th><th>Ticket types</th><th>Reserved</th><th></th></tr></thead><tbody id="rows"></tbody></table></div></div>
@@ -43,20 +43,22 @@ const v = App.shell('admin', 'events'); if (v) {
   };
   $('addType').onclick = () => { $('types').insertAdjacentHTML('beforeend', typeRow()); bindRm(); };
   $('newBtn').onclick = () => openForm();
-  $('evForm').onsubmit = ev => {
+  $('evForm').onsubmit = async ev => {
     ev.preventDefault();
+    const btn = $('evForm').querySelector('.modal-footer .btn-brand'); btn.disabled = true;
     try {
       const types = [...document.querySelectorAll('.type-row')].map(r => ({ ticket_ID: r.dataset.id ? +r.dataset.id : null, type_name: r.querySelector('.tn').value, price: +r.querySelector('.tp').value, total: +r.querySelector('.tc').value }));
-      Store.saveEvent({ event_ID: editing?.event_ID, event_name: $('f_name').value, category: $('f_cat').value.trim() || 'General', event_date: $('f_date').value, event_time: $('f_time').value, venue: $('f_venue').value, description: $('f_desc').value }, types, App.user().user_ID);
+      await Store.saveEvent({ event_ID: editing?.event_ID, event_name: $('f_name').value, category: $('f_cat').value.trim() || 'General', event_date: $('f_date').value, event_time: $('f_time').value, venue: $('f_venue').value, description: $('f_desc').value }, types);
       modal.hide(); draw(); App.toast(editing ? 'Event updated.' : 'Event created.');
     } catch (e) { $('evErr').textContent = e.message; $('evErr').classList.remove('d-none'); }
+    finally { btn.disabled = false; }
   };
   const draw = () => {
     $('rows').innerHTML = Store.events().map(e => { const s = Store.seats(e.event_ID), ts = Store.typesOf(e.event_ID); return `<tr><td><div class="fw-semibold">${App.esc(e.event_name)}</div><span class="badge text-bg-light">${App.esc(e.category)}</span></td><td>${App.fmtDate(e.event_date)}<div class="small text-muted-2">${App.fmtTime(e.event_time)}</div></td><td>${App.esc(e.venue)}</td>
       <td class="small">${ts.map(t => `${App.esc(t.type_name)} · ${App.peso(t.price)} · ${t.quantity_available} left`).join('<br>')}</td><td>${s.sold}/${s.total}</td>
       <td class="text-end text-nowrap"><button class="btn btn-sm btn-outline-secondary" data-edit="${e.event_ID}">Edit</button> <button class="btn btn-sm btn-outline-danger" data-del="${e.event_ID}" aria-label="Delete ${App.esc(e.event_name)}"><i class="bi bi-trash"></i></button></td></tr>`; }).join('');
     document.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => openForm(+b.dataset.edit));
-    document.querySelectorAll('[data-del]').forEach(b => b.onclick = () => { if (confirm('Delete this event and its ticket types?')) { try { Store.deleteEvent(+b.dataset.del); draw(); App.toast('Event deleted.', 'secondary'); } catch (e) { App.toast(e.message, 'danger'); } } });
+    document.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => { if (confirm('Delete this event and its ticket types?')) { try { await Store.deleteEvent(+b.dataset.del); draw(); App.toast('Event deleted.', 'secondary'); } catch (e) { App.toast(e.message, 'danger'); } } });
   };
   draw();
   if (App.param('new')) openForm(); else if (App.param('edit')) openForm(+App.param('edit'));

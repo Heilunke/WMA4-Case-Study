@@ -9,7 +9,7 @@ const App = (() => {
   const fmtDT = iso => new Date(iso).toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   const user = () => { try { return JSON.parse(sessionStorage.getItem(SKEY)); } catch (e) { return null; } };
   const setUser = u => sessionStorage.setItem(SKEY, JSON.stringify(u));
-  const logout = () => { sessionStorage.removeItem(SKEY); location.href = root + 'index.html'; };
+  const logout = async () => { await Store.logout(); sessionStorage.removeItem(SKEY); location.href = root + 'index.html'; };
   const pill = s => `<span class="pill pill-${s}">${esc(s[0].toUpperCase() + s.slice(1))}</span>`;
   const home = u => root + (u.role === 'admin' ? 'admin/dashboard.html' : 'attendee/dashboard.html');
 
@@ -18,10 +18,20 @@ const App = (() => {
     attendee: [['dashboard', 'Dashboard', 'speedometer2', 'attendee/dashboard.html'], ['events', 'Browse Events', 'search', 'attendee/events.html'], ['reservations', 'My Reservations', 'ticket-perforated', 'attendee/my-reservations.html']]
   };
 
-  /* Route guard + layout. Returns the <main> element to render into. */
-  function shell(role, active) {
-    const u = user();
+  /* Route guard + layout. Loads the data snapshot from the API, then returns the <main> element to render into
+     (or null when it redirected). The SERVER decides who you are and what you may see; the role kept in
+     sessionStorage is only used for the quick redirect below and is overwritten with the server's answer. */
+  async function shell(role, active) {
+    let u = user();
     if (!u) { location.replace(root + 'index.html'); return null; }
+    try {
+      u = await Store.init();           // 401 here -> Store sends us to the login page
+    } catch (e) {
+      if (e.status === 401) return null;
+      document.getElementById('app').innerHTML = `<div class="container py-5"><div class="alert alert-danger" role="alert"><strong>Could not load your data.</strong> ${esc(e.message)} <button class="btn btn-sm btn-outline-danger ms-2" onclick="location.reload()">Retry</button></div></div>`;
+      return null;
+    }
+    setUser(u);
     if (u.role !== role) { location.replace(home(u)); return null; } // RBAC: wrong role -> own home
     const links = NAV[role].map(([k, label, ic, href]) => `<a href="${root}${href}" class="${k === active ? 'active' : ''}" ${k === active ? 'aria-current="page"' : ''}><i class="bi bi-${ic}" aria-hidden="true"></i>${label}</a>`).join('');
     document.getElementById('app').innerHTML = `
@@ -31,12 +41,34 @@ const App = (() => {
           <div class="role-tag">${role === 'admin' ? 'Administrator' : 'Attendee'}</div>
           <nav aria-label="Main">${links}</nav>
           <div class="user"><div><div class="name">${esc(u.full_Name)}</div><div class="small">${esc(u.email)}</div></div>
-            <button class="btn btn-sm btn-outline-light mt-2" id="logoutBtn"><i class="bi bi-box-arrow-right"></i> Log out</button></div>
+            <div class="d-flex flex-wrap gap-2 mt-2"><button class="btn btn-sm btn-outline-light" id="logoutBtn"><i class="bi bi-box-arrow-right"></i> Log out</button>
+            <button class="btn btn-sm btn-outline-light" id="pwBtn"><i class="bi bi-key"></i> Password</button></div></div>
         </aside>
         <main class="main" id="view"></main>
       </div>
+      <div class="modal fade" id="pwModal" tabindex="-1" aria-labelledby="pwTitle"><div class="modal-dialog"><form class="modal-content" id="pwForm" novalidate>
+        <div class="modal-header"><h2 class="modal-title h5" id="pwTitle">Change password</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+        <div class="modal-body"><div id="pwErr" class="alert alert-danger d-none" role="alert"></div>
+          <div class="mb-3"><label class="form-label" for="pwCur">Current password</label><input class="form-control" id="pwCur" type="password" autocomplete="current-password" required></div>
+          <div class="mb-3"><label class="form-label" for="pwNew">New password</label><input class="form-control" id="pwNew" type="password" minlength="6" autocomplete="new-password" required></div>
+          <div class="mb-1"><label class="form-label" for="pwNew2">Repeat new password</label><input class="form-control" id="pwNew2" type="password" minlength="6" autocomplete="new-password" required></div>
+          <div class="form-text">At least 6 characters. Your other signed-in devices will be logged out.</div></div>
+        <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button><button class="btn btn-brand">Change password</button></div>
+      </form></div></div>
       <div class="toast-container position-fixed bottom-0 end-0 p-3" id="toasts"></div>`;
     document.getElementById('logoutBtn').onclick = logout;
+    const pwModal = new bootstrap.Modal(document.getElementById('pwModal')), pwForm = document.getElementById('pwForm'), pwErr = document.getElementById('pwErr');
+    document.getElementById('pwBtn').onclick = () => { pwForm.reset(); pwErr.classList.add('d-none'); pwModal.show(); };
+    pwForm.onsubmit = async ev => {
+      ev.preventDefault();
+      const v = id => document.getElementById(id).value, btn = pwForm.querySelector('.btn-brand');
+      pwErr.classList.add('d-none');
+      if (v('pwNew') !== v('pwNew2')) { pwErr.textContent = 'The new passwords do not match.'; pwErr.classList.remove('d-none'); return; }
+      btn.disabled = true;
+      try { await Store.changePassword(v('pwCur'), v('pwNew')); pwModal.hide(); toast('Password changed.'); }
+      catch (e) { pwErr.textContent = e.message; pwErr.classList.remove('d-none'); }
+      finally { btn.disabled = false; }
+    };
     return document.getElementById('view');
   }
   function toast(msg, kind = 'success') {

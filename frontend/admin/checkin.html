@@ -9,13 +9,13 @@
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="../js/store.js"></script><script src="../js/app.js"></script>
-<script>
-const v = App.shell('admin', 'checkin'); if (v) {
+<script type="module">
+const v = await App.shell('admin', 'checkin'); if (v) {
   const $ = id => document.getElementById(id), evs = Store.events();
   v.innerHTML = `<div class="page-head"><div><h1>Event check-in</h1><div class="text-muted-2">Validate e-tickets at the entrance. Type the ticket code or use a USB/phone QR scanner that types into the field.</div></div></div>
     <div class="row g-4"><div class="col-lg-5"><div class="card p-3">
       <label class="form-label" for="ev">Event</label><select id="ev" class="form-select mb-3">${evs.map(e => `<option value="${e.event_ID}">${App.esc(e.event_name)} — ${App.fmtDate(e.event_date)}</option>`).join('')}</select>
-      <form id="scanForm"><label class="form-label" for="code">Ticket code</label><div class="input-group"><input id="code" class="form-control scan-input" placeholder="TKT-001-1-XXXX" autocomplete="off" autofocus><button class="btn btn-brand">Validate</button></div></form>
+      <form id="scanForm"><label class="form-label" for="code">Ticket code</label><div class="input-group"><input id="code" class="form-control scan-input" placeholder="TKT-001-1-XXXXXXXX" autocomplete="off" autofocus><button class="btn btn-brand">Validate</button></div></form>
       <div id="result" class="mt-3" aria-live="polite"></div></div>
       <div class="card p-3 mt-4"><div class="d-flex justify-content-between"><span class="fw-semibold">Checked in</span><span id="count"></span></div><div class="seat-bar mt-2"><span id="bar" style="width:0"></span></div></div></div>
       <div class="col-lg-7"><div class="card p-3"><h2 class="h5">Attendee list</h2><div class="table-wrap"><table class="table align-middle mb-0"><thead><tr><th>Attendee</th><th>Ticket</th><th>Code</th><th>Entry</th><th></th></tr></thead><tbody id="rows"></tbody></table></div></div></div></div>`;
@@ -26,10 +26,13 @@ const v = App.shell('admin', 'checkin'); if (v) {
     $('rows').innerHTML = l.length ? l.map(({ a, r }) => `<tr><td>${App.esc(a.full_name)}<div class="small text-muted-2">${r.code}</div></td><td>${App.esc(r.ticket.type_name)}</td><td class="font-monospace small">${a.ticket_code}</td><td>${a.status ? App.pill('checked').replace('Checked', 'Checked in') + `<div class="small text-muted-2">${App.fmtDT(a.checked_in_at)}</div>` : '<span class="text-muted-2">Not yet</span>'}</td>
       <td class="text-end">${a.status ? `<button class="btn btn-sm btn-outline-secondary" data-undo="${a.attendee_ID}">Undo</button>` : `<button class="btn btn-sm btn-outline-primary" data-in="${a.ticket_code}">Check in</button>`}</td></tr>`).join('') : '<tr><td colspan="5" class="text-center text-muted-2 py-4">No confirmed tickets for this event yet.</td></tr>';
     document.querySelectorAll('[data-in]').forEach(b => b.onclick = () => run(b.dataset.in));
-    document.querySelectorAll('[data-undo]').forEach(b => b.onclick = () => { Store.undoCheckIn(b.dataset.undo); draw(); });
+    document.querySelectorAll('[data-undo]').forEach(b => b.onclick = async () => { try { await Store.undoCheckIn(b.dataset.undo); draw(); } catch (e) { App.toast(e.message, 'danger'); } });
   };
-  const run = code => {
-    const res = Store.checkIn(code, $('ev').value), who = res.attendee ? `<div class="fw-semibold mt-1">${App.esc(res.attendee.full_name)}</div><div class="small">${res.reservation.code} · ${App.esc(res.reservation.ticket.type_name)} · ${App.esc(res.reservation.event.event_name)}</div>` : '';
+  const run = async code => {
+    let res;
+    try { res = await Store.checkIn(code, $('ev').value); }
+    catch (e) { res = { level: 'danger', msg: e.message }; }
+    const who = res.attendee ? `<div class="fw-semibold mt-1">${App.esc(res.attendee.full_name)}</div><div class="small">${res.reservation.code} · ${App.esc(res.reservation.ticket.type_name)} · ${App.esc(res.reservation.event.event_name)}</div>` : '';
     const ic = { success: 'check-circle-fill', warning: 'exclamation-triangle-fill', danger: 'x-octagon-fill' }[res.level];
     $('result').innerHTML = `<div class="result-card result-${res.level}"><div class="fw-bold"><i class="bi bi-${ic} me-1"></i>${App.esc(res.msg)}</div>${who}</div>`;
     $('code').value = ''; $('code').focus(); draw();

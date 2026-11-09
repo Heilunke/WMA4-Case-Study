@@ -1,64 +1,82 @@
-/* E-Ticket mock data layer (browser localStorage).
-   Mirrors the six tables in the proposal's ERD so it can later be swapped
-   for the PHP/Laravel REST API (events + reservations endpoints).
-   NOTE: passwords are stored in plain text ONLY because this is a front-end
-   prototype. The real system must use password_hash()/bcrypt. */
+/* E-Ticket data layer — talks to the PHP/MySQL REST API (backend/).
+   Reads are synchronous against an in-memory snapshot loaded by `await Store.init()` (App.shell does this
+   for every page). Every change is an API call that is awaited, after which the snapshot is re-fetched,
+   so the UI always shows what the database actually holds. Business rules (inventory, ticket codes,
+   RBAC, validation) live on the server; this file never decides them.
+
+   API location: the PHP dev server serves the frontend at / and the API at /api.
+   Under XAMPP (…/WMA4-Case-Study/frontend/…) it is …/WMA4-Case-Study/backend/public/index.php/api.
+   Override by defining window.ETICKET_API before this script loads. */
 (function (global) {
-  const KEY = 'eticket_db_v1';
-  const day = n => { const x = new Date(); x.setDate(x.getDate() + n); return x.toISOString().slice(0, 10); };
   const pad = (n, w = 3) => String(n).padStart(w, '0');
-  const now = () => new Date().toISOString();
+  const SKEY = 'eticket_session';
 
-  let cache = null;
-  const db = () => cache || (cache = load());
-  function load() {
-    try { const raw = localStorage.getItem(KEY); if (raw) return JSON.parse(raw); } catch (e) {}
-    const fresh = seed(); localStorage.setItem(KEY, JSON.stringify(fresh)); return fresh;
+  function apiBase() {
+    if (global.ETICKET_API) return global.ETICKET_API.replace(/\/$/, '');
+    const i = location.pathname.indexOf('/frontend/');
+    return i >= 0 ? location.pathname.slice(0, i) + '/backend/public/index.php/api' : '/api';
   }
-  function save() { localStorage.setItem(KEY, JSON.stringify(cache)); }
-  function nextId(t) { const d = db(); d.seq[t] = (d.seq[t] || 0) + 1; return d.seq[t]; }
+  const BASE = apiBase();
 
-  function seed() {
-    cache = { seq: {}, users: [], events: [], ticket_types: [], reservations: [], attendee_details: [], payments: [] };
-    const u = (full_Name, email, password, role) => { const r = { user_ID: nextId('u'), full_Name, email, password, role, created_at: now() }; cache.users.push(r); return r; };
-    const admin = u('Event Administrator', 'admin@eticket.test', 'admin123', 'admin');
-    const a1 = u('Maria Santos', 'attendee@eticket.test', 'attendee123', 'attendee');
-    const a2 = u('Juan Dela Cruz', 'juan@eticket.test', 'attendee123', 'attendee');
-    const a3 = u('Ana Reyes', 'ana@eticket.test', 'attendee123', 'attendee');
-    const ev = (event_name, category, off, event_time, venue, description, types) => {
-      const e = { event_ID: nextId('e'), user_ID: admin.user_ID, event_name, category, event_date: day(off), event_time, venue, description };
-      cache.events.push(e);
-      types.forEach(([type_name, price, total]) => cache.ticket_types.push({ ticket_ID: nextId('t'), event_ID: e.event_ID, type_name, price, quantity_available: total, quantity_sold: 0 }));
-      return e;
-    };
-    const fun = ev('Fun Run 2026', 'Sports', 21, '05:30', 'TSU Main Campus Oval, Tarlac City', '5K community fun run open to students and the public. Includes race bib, finisher shirt and hydration stations.', [['Regular', 0, 50]]);
-    const summit = ev('CCS Tech Summit', 'Seminar', 14, '09:00', 'TSU Convention Hall, Tarlac City', 'A one-day conference on web, mobile and cloud development with industry speakers and a career fair.', [['Regular', 250, 300], ['VIP', 750, 40]]);
-    ev('Campus Acoustic Night', 'Concert', 30, '18:00', 'TSU Amphitheater, Tarlac City', 'An evening of live acoustic performances by student bands and guest artists.', [['General Admission', 150, 200], ['VIP', 400, 30]]);
-    ev('Web Dev Workshop: Laravel Basics', 'Workshop', 7, '13:00', 'CCS Computer Lab 2, TSU', 'Hands-on workshop covering routing, controllers and Eloquent. Bring your own laptop.', [['Regular', 100, 30]]);
-    const T = id => cache.ticket_types.find(t => t.event_ID === id);
-    // seed reservations through the real functions so inventory stays consistent
-    const mk = (user, ev_, qty, names, confirmIt, paid) => {
-      const r = reserve(user.user_ID, T(ev_.event_ID).ticket_ID, qty, names.map(n => ({ full_name: n, contact_number: '0917 000 ' + pad(Math.floor(Math.random() * 999), 4) })), 'Pay at venue');
-      if (confirmIt) confirm(r.reservation_ID);
-      if (paid) markPaid(r.reservation_ID, 'Cash');
-      return r;
-    };
-    const r1 = mk(a1, summit, 2, ['Maria Santos', 'Carlo Santos'], true, true);
-    mk(a2, fun, 3, ['Juan Dela Cruz', 'Liza Dela Cruz', 'Marco Dela Cruz'], true, true);
-    mk(a3, summit, 1, ['Ana Reyes'], false, false);
-    mk(a1, fun, 1, ['Maria Santos'], false, false);
-    const r5 = mk(a2, summit, 1, ['Juan Dela Cruz'], false, false); cancel(r5.reservation_ID);
-    checkIn(cache.attendee_details.find(x => x.reservation_ID === r1.reservation_ID).ticket_code);
-    return cache;
+  class ApiError extends Error {
+    constructor(message, status, code) { super(message); this.status = status; this.code = code; }
   }
 
-  /* ---------- helpers ---------- */
+  let cache = null, csrf = '', me = null, reportData = null, settings = { hold_hours: 0 };
+
+  async function api(method, path, body) {
+    const headers = { Accept: 'application/json' };
+    if (body !== undefined) headers['Content-Type'] = 'application/json';
+    if (csrf) headers['X-CSRF-Token'] = csrf;
+    let res;
+    try {
+      res = await fetch(BASE + path, { method, headers, credentials: 'same-origin', body: body === undefined ? undefined : JSON.stringify(body) });
+    } catch (e) {
+      throw new ApiError('Cannot reach the server. Check that the backend is running.', 0, 'network');
+    }
+    const text = await res.text();
+    let data = null;
+    try { data = text ? JSON.parse(text) : null; } catch (e) { throw new ApiError('The server sent an unexpected response.', res.status, 'bad_response'); }
+    if (data && data.csrf) csrf = data.csrf;
+    if (!res.ok) {
+      const err = (data && data.error) || {};
+      // Session expired / not logged in: forget the local user and go to the login page.
+      if (res.status === 401 && path !== '/auth/login') {
+        try { sessionStorage.removeItem(SKEY); } catch (e) {}
+        const root = (document.body && document.body.dataset.root) || '';
+        if (root) location.href = root + 'index.html'; // only the login page itself has an empty root
+      }
+      throw new ApiError(err.message || 'Request failed (' + res.status + ').', res.status, err.code);
+    }
+    return data;
+  }
+
+  function apply(d) {
+    me = d.user; csrf = d.csrf || csrf; reportData = d.report || null; settings = d.settings || settings;
+    cache = { users: d.users, events: d.events, ticket_types: d.ticket_types, reservations: d.reservations, attendee_details: d.attendee_details, payments: d.payments };
+  }
+  /* Load (or reload) everything the logged-in user may see. Returns the current user. */
+  async function refresh() { apply(await api('GET', '/bootstrap')); return me; }
+  const init = refresh;
+  const db = () => { if (!cache) throw new Error('Store.init() has not finished yet.'); return cache; };
+
+  /* ---------- read helpers (synchronous, from the snapshot) ---------- */
+  const current = () => me;
   const users = () => db().users;
   const events = () => db().events.slice().sort((a, b) => (a.event_date + a.event_time).localeCompare(b.event_date + b.event_time));
   const eventById = id => db().events.find(e => e.event_ID === +id);
   const typesOf = id => db().ticket_types.filter(t => t.event_ID === +id);
   const typeById = id => db().ticket_types.find(t => t.ticket_ID === +id);
   const reservations = () => db().reservations.slice().sort((a, b) => b.reservation_ID - a.reservation_ID);
+  const reservationsOf = uid => db().reservations.filter(r => r.user_ID === +uid);
+  /* Unpaid Pending reservations are cancelled by the server after settings.hold_hours (0 = never).
+     Returns the Date it will expire, or null when it will not. */
+  const holdHours = () => settings.hold_hours || 0;
+  function expiresAt(r) {
+    const p = paymentOf(r.reservation_ID);
+    if (!holdHours() || r.reservation_status !== 'pending' || !p || p.payment_status !== 'unpaid') return null;
+    return new Date(new Date(r.reservation_date).getTime() + holdHours() * 3600e3);
+  }
   const resById = id => db().reservations.find(r => r.reservation_ID === +id);
   const attendeesOf = rid => db().attendee_details.filter(a => a.reservation_ID === +rid);
   const paymentOf = rid => db().payments.find(p => p.reservation_ID === +rid);
@@ -76,146 +94,80 @@
     const att = attendeesOf(r.reservation_ID);
     return { ...r, code: resCode(r), ticket: t, event: e, payment: p, user: u, attendees: att, checkedIn: att.filter(a => a.status).length };
   }
+  const report = () => { if (!reportData) throw new Error('Reports are available to Administrators only.'); return reportData; };
 
   /* ---------- auth ---------- */
-  function login(email, password) {
-    const u = db().users.find(x => x.email.toLowerCase() === String(email).trim().toLowerCase());
-    if (!u || u.password !== password) throw new Error('Incorrect email or password.');
-    return { user_ID: u.user_ID, full_Name: u.full_Name, email: u.email, role: u.role };
+  const publicUser = u => ({ user_ID: u.user_ID, full_Name: u.full_Name, email: u.email, role: u.role });
+  async function login(email, password) {
+    const d = await api('POST', '/auth/login', { email: String(email).trim(), password });
+    return publicUser(d.user);
   }
-  function register(full_Name, email, password) {
+  async function register(full_Name, email, password) {
     full_Name = String(full_Name).trim(); email = String(email).trim();
     if (!full_Name || !email || password.length < 6) throw new Error('Enter your name, a valid email and a password of at least 6 characters.');
-    if (db().users.some(x => x.email.toLowerCase() === email.toLowerCase())) throw new Error('That email is already registered.');
-    // Public sign-up is ALWAYS role = attendee; admins are created/promoted only by an Administrator.
-    const r = { user_ID: nextId('u'), full_Name, email, password, role: 'attendee', created_at: now() };
-    db().users.push(r); save();
-    return { user_ID: r.user_ID, full_Name, email, role: 'attendee' };
+    // The server ignores any role we might send: public sign-up is ALWAYS an attendee.
+    const d = await api('POST', '/auth/register', { full_Name, email, password });
+    return publicUser(d.user);
   }
-  function setRole(userId, role) {
-    const u = userById(userId); if (!u) throw new Error('User not found.');
-    if (u.role === 'admin' && role !== 'admin' && db().users.filter(x => x.role === 'admin').length < 2) throw new Error('At least one Administrator is required.');
-    u.role = role; save();
+  async function logout() { try { await api('POST', '/auth/logout'); } catch (e) {} cache = null; me = null; csrf = ''; }
+  async function setRole(userId, role) { await api('PUT', '/users/' + +userId + '/role', { role }); await refresh(); }
+
+  /* ---------- passwords (no e-mail server: an Administrator hands the user a one-time reset code) ---------- */
+  async function issueResetCode(userId) { return api('POST', '/users/' + +userId + '/reset-code'); } // {code, expires_at}
+  async function resetPassword(email, code, password) {
+    if (String(password).length < 6) throw new Error('The new password must be at least 6 characters.');
+    await api('POST', '/auth/reset-password', { email: String(email).trim(), code: String(code).trim(), password });
+  }
+  async function changePassword(currentPassword, password) {
+    if (String(password).length < 6) throw new Error('The new password must be at least 6 characters.');
+    await api('POST', '/auth/change-password', { current_password: currentPassword, password });
   }
 
-  /* ---------- reservations & inventory ----------
-     Inventory rule (answers panel item 5):
-       PENDING and CONFIRMED reservations both HOLD seats (quantity_available is reduced at submit time).
-       CANCELLED releases the seats back. A reservation with any checked-in attendee cannot be cancelled. */
-  function reserve(userId, ticketId, qty, attendees, method) {
-    const t = typeById(ticketId); if (!t) throw new Error('Ticket type not found.');
-    qty = +qty;
-    if (!(qty >= 1 && qty <= 10)) throw new Error('You can reserve 1 to 10 tickets per transaction.');
-    if (qty > t.quantity_available) throw new Error(t.quantity_available ? `Only ${t.quantity_available} ticket(s) left for ${t.type_name}.` : `${t.type_name} is sold out.`);
-    if (attendees.length !== qty || attendees.some(a => !String(a.full_name).trim())) throw new Error('Enter the name of every attendee (one per ticket).');
-    t.quantity_available -= qty; t.quantity_sold += qty;
-    const total = +(t.price * qty).toFixed(2);
-    const r = { reservation_ID: nextId('r'), user_ID: +userId, ticket_ID: t.ticket_ID, quantity: qty, total_amount: total, reservation_status: 'pending', reservation_date: now() };
-    db().reservations.push(r);
-    attendees.forEach(a => db().attendee_details.push({ attendee_ID: nextId('a'), reservation_ID: r.reservation_ID, full_name: a.full_name.trim(), contact_number: (a.contact_number || '').trim() || null, ticket_code: null, status: false, checked_in_at: null }));
-    const free = total === 0;
-    db().payments.push({ payment_ID: nextId('p'), reservation_ID: r.reservation_ID, amount: total, payment_method: free ? 'Free' : method, payment_status: free ? 'paid' : 'unpaid', payment_date: free ? now() : null });
-    save(); return r;
+  /* ---------- reservations & inventory (rules enforced by the API) ----------
+     PENDING and CONFIRMED reservations HOLD seats; CANCELLED releases them. */
+  /* The server books it for the logged-in user (from the session), so no user id is sent. */
+  async function reserve(ticketId, qty, attendees, method) {
+    const d = await api('POST', '/reservations', {
+      ticket_ID: +ticketId, quantity: +qty, payment_method: method,
+      attendees: attendees.map(a => ({ full_name: a.full_name, contact_number: a.contact_number || '' }))
+    });
+    await refresh();
+    return d.reservation;
   }
-  const rand4 = () => Array.from({ length: 4 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.floor(Math.random() * 32)]).join('');
-  function confirm(rid) {
-    const r = resById(rid); if (!r) throw new Error('Reservation not found.');
-    if (r.reservation_status === 'cancelled') throw new Error('A cancelled reservation cannot be confirmed.');
-    if (r.reservation_status === 'confirmed') return r;
-    r.reservation_status = 'confirmed';
-    // Electronic tickets are generated here: one unique code (and QR) per attendee.
-    attendeesOf(rid).forEach((a, i) => { if (!a.ticket_code) a.ticket_code = `TKT-${pad(rid)}-${i + 1}-${rand4()}`; });
-    save(); return r;
-  }
-  function cancel(rid) {
-    const r = resById(rid); if (!r) throw new Error('Reservation not found.');
-    if (r.reservation_status === 'cancelled') return r;
-    if (attendeesOf(rid).some(a => a.status)) throw new Error('Cannot cancel: an attendee has already checked in.');
-    const t = typeById(r.ticket_ID); t.quantity_available += r.quantity; t.quantity_sold -= r.quantity;
-    r.reservation_status = 'cancelled';
-    attendeesOf(rid).forEach(a => { a.ticket_code = null; }); // ticket is voided
-    save(); return r;
-  }
-  function markPaid(rid, method) {
-    const p = paymentOf(rid); if (!p) throw new Error('Payment record not found.');
-    const r = resById(rid); if (r.reservation_status === 'cancelled') throw new Error('Reservation is cancelled.');
-    // Payment scope (final decision): NO online gateway. Admin records payment received (cash / bank / e-wallet).
-    p.payment_status = 'paid'; p.payment_method = method || p.payment_method || 'Cash'; p.payment_date = now(); save(); return p;
-  }
+  async function confirm(rid) { await api('POST', '/reservations/' + +rid + '/confirm'); await refresh(); return resById(rid); }
+  async function cancel(rid) { await api('POST', '/reservations/' + +rid + '/cancel'); await refresh(); return resById(rid); }
+  async function markPaid(rid, method) { await api('POST', '/reservations/' + +rid + '/payment', { payment_method: method || 'Cash' }); await refresh(); return paymentOf(rid); }
 
   /* ---------- check-in / ticket validation ---------- */
-  function checkIn(code, eventId) {
-    code = String(code || '').trim().toUpperCase();
+  async function checkIn(code, eventId) {
+    code = String(code || '').trim();
     if (!code) return { level: 'danger', msg: 'Enter or scan a ticket code.' };
-    const a = db().attendee_details.find(x => x.ticket_code === code);
-    if (!a) return { level: 'danger', msg: 'Invalid ticket — code not found or ticket was voided.' };
-    const r = resById(a.reservation_ID), v = resView(r);
-    const base = { attendee: a, reservation: v };
-    if (eventId && v.event.event_ID !== +eventId) return { ...base, level: 'danger', msg: `Wrong event — this ticket is for “${v.event.event_name}”.` };
-    if (r.reservation_status !== 'confirmed') return { ...base, level: 'danger', msg: `Reservation is ${r.reservation_status}. Only confirmed tickets are valid.` };
-    if (a.status) return { ...base, level: 'warning', msg: `Already checked in at ${new Date(a.checked_in_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.` };
-    a.status = true; a.checked_in_at = now(); save();
-    return { ...base, level: 'success', msg: 'Valid ticket — attendee checked in.' };
+    const res = await api('POST', '/checkin', { ticket_code: code, event_ID: eventId ? +eventId : null });
+    await refresh();
+    const out = { level: res.level, code: res.code, msg: res.message };
+    if (res.attendee_ID) {
+      out.attendee = db().attendee_details.find(a => a.attendee_ID === res.attendee_ID);
+      out.reservation = resView(resById(res.reservation_ID));
+    }
+    if (res.code === 'already_used' && res.checked_in_at) {
+      out.msg = 'Already checked in at ' + new Date(res.checked_in_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + '.';
+    }
+    return out;
   }
-  function undoCheckIn(attendeeId) { const a = db().attendee_details.find(x => x.attendee_ID === +attendeeId); if (a) { a.status = false; a.checked_in_at = null; save(); } }
+  async function undoCheckIn(attendeeId) { await api('POST', '/attendees/' + +attendeeId + '/undo-checkin'); await refresh(); }
 
   /* ---------- events (admin) ---------- */
-  function saveEvent(data, types, adminId) {
-    if (!data.event_name.trim() || !data.event_date || !data.event_time || !data.venue.trim()) throw new Error('Name, date, time and venue are required.');
-    if (!types.length) throw new Error('Add at least one ticket type.');
-    if (types.some(t => !t.type_name.trim() || t.price < 0 || !(t.total >= 1))) throw new Error('Each ticket type needs a name, a price of 0 or more, and a capacity of at least 1.');
-    let e;
-    if (data.event_ID) { e = eventById(data.event_ID); Object.assign(e, data); }
-    else { e = { ...data, event_ID: nextId('e'), user_ID: +adminId }; db().events.push(e); }
-    const existing = typesOf(e.event_ID);
-    const keep = new Set();
-    for (const t of types) {
-      if (t.ticket_ID) {
-        const row = typeById(t.ticket_ID);
-        if (t.total < row.quantity_sold) throw new Error(`${row.type_name}: capacity cannot be lower than the ${row.quantity_sold} ticket(s) already reserved.`);
-        row.type_name = t.type_name.trim(); row.price = +t.price; row.quantity_available = t.total - row.quantity_sold; keep.add(row.ticket_ID);
-      } else {
-        const row = { ticket_ID: nextId('t'), event_ID: e.event_ID, type_name: t.type_name.trim(), price: +t.price, quantity_available: +t.total, quantity_sold: 0 };
-        db().ticket_types.push(row); keep.add(row.ticket_ID);
-      }
-    }
-    for (const row of existing) if (!keep.has(row.ticket_ID)) {
-      if (row.quantity_sold > 0) throw new Error(`Cannot remove ${row.type_name}: it already has reservations.`);
-      db().ticket_types = db().ticket_types.filter(x => x.ticket_ID !== row.ticket_ID);
-    }
-    save(); return e;
+  async function saveEvent(data, types) {
+    const body = {
+      event_name: data.event_name, category: data.category, description: data.description,
+      event_date: data.event_date, event_time: data.event_time, venue: data.venue,
+      ticket_types: types.map(t => ({ ticket_ID: t.ticket_ID || null, type_name: t.type_name, price: t.price, total: t.total }))
+    };
+    const d = data.event_ID ? await api('PUT', '/events/' + +data.event_ID, body) : await api('POST', '/events', body);
+    await refresh();
+    return eventById(d.event_ID);
   }
-  function deleteEvent(id) {
-    const tIds = typesOf(id).map(t => t.ticket_ID);
-    if (db().reservations.some(r => tIds.includes(r.ticket_ID) && r.reservation_status !== 'cancelled')) throw new Error('This event still has active reservations. Cancel them first.');
-    const rIds = db().reservations.filter(r => tIds.includes(r.ticket_ID)).map(r => r.reservation_ID);
-    const d = db();
-    d.attendee_details = d.attendee_details.filter(a => !rIds.includes(a.reservation_ID));
-    d.payments = d.payments.filter(p => !rIds.includes(p.reservation_ID));
-    d.reservations = d.reservations.filter(r => !rIds.includes(r.reservation_ID));
-    d.ticket_types = d.ticket_types.filter(t => t.event_ID !== +id);
-    d.events = d.events.filter(e => e.event_ID !== +id);
-    save();
-  }
+  async function deleteEvent(id) { await api('DELETE', '/events/' + +id); await refresh(); }
 
-  /* ---------- reports ---------- */
-  function report() {
-    const rs = reservations().map(resView);
-    const byStatus = { confirmed: 0, pending: 0, cancelled: 0 };
-    rs.forEach(r => byStatus[r.reservation_status]++);
-    const perEvent = events().map(e => {
-      const mine = rs.filter(r => r.event.event_ID === e.event_ID && r.reservation_status !== 'cancelled');
-      const s = seats(e.event_ID);
-      return {
-        event: e, capacity: s.total, reserved: s.sold,
-        confirmed: mine.filter(r => r.reservation_status === 'confirmed').reduce((n, r) => n + r.quantity, 0),
-        revenue: mine.filter(r => r.payment && r.payment.payment_status === 'paid').reduce((n, r) => n + r.total_amount, 0),
-        checkedIn: mine.reduce((n, r) => n + r.checkedIn, 0)
-      };
-    });
-    return { byStatus, perEvent, totals: { events: db().events.length, reservations: rs.length, users: db().users.length, pending: byStatus.pending } };
-  }
-  function reset() { localStorage.removeItem(KEY); cache = null; load(); }
-
-  global.Store = { db, users, events, eventById, typesOf, typeById, reservations, resById, resView, resCode, attendeesOf, paymentOf, userById, seats, login, register, setRole, reserve, confirm, cancel, markPaid, checkIn, undoCheckIn, saveEvent, deleteEvent, report, reset };
+  global.Store = { init, refresh, current, db, users, events, eventById, typesOf, typeById, reservations, reservationsOf, resById, resView, resCode, attendeesOf, paymentOf, userById, seats, holdHours, expiresAt, login, register, logout, setRole, issueResetCode, resetPassword, changePassword, reserve, confirm, cancel, markPaid, checkIn, undoCheckIn, saveEvent, deleteEvent, report, ApiError };
 })(typeof window !== 'undefined' ? window : globalThis);
