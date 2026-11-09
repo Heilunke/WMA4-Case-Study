@@ -58,7 +58,7 @@ const v = await App.shell('admin', 'events'); if (v) {
       <td class="small">${ts.map(t => `${App.esc(t.type_name)} · ${App.peso(t.price)} · ${t.quantity_available} left`).join('<br>')}</td><td>${s.sold}/${s.total}</td>
       <td class="text-end text-nowrap"><button class="btn btn-sm btn-outline-secondary" data-edit="${e.event_ID}">Edit</button> <button class="btn btn-sm btn-outline-danger" data-del="${e.event_ID}" aria-label="Delete ${App.esc(e.event_name)}"><i class="bi bi-trash"></i></button></td></tr>`; }).join('');
     document.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => openForm(+b.dataset.edit));
-    document.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => { if (confirm('Delete this event and its ticket types?')) { try { await Store.deleteEvent(+b.dataset.del); draw(); App.toast('Event deleted.', 'secondary'); } catch (e) { App.toast(e.message, 'danger'); } } });
+    document.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => { const ev = Store.eventById(+b.dataset.del); if (await App.confirm({ title: 'Delete event?', message: `“${ev.event_name}” and its ticket types will be removed. Events with active reservations cannot be deleted.`, ok: 'Delete event', cancel: 'Keep event', danger: true })) { try { await Store.deleteEvent(+b.dataset.del); draw(); App.toast('Event deleted.', 'secondary'); } catch (e) { App.toast(e.message, 'danger'); } } });
   };
   draw();
   if (App.param('new')) openForm(); else if (App.param('edit')) openForm(+App.param('edit'));

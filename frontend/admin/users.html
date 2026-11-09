@@ -24,7 +24,7 @@ const v = await App.shell('admin', 'users'); if (v) {
     document.querySelectorAll("[data-uid]").forEach(s => s.onchange = async () => { try { await Store.setRole(s.dataset.uid, s.value); App.toast('Role updated.'); } catch (e) { App.toast(e.message, 'danger'); draw(); } });
     document.querySelectorAll('[data-reset]').forEach(b => b.onclick = async () => {
       const target = Store.userById(b.dataset.reset);
-      if (!confirm(`Issue a password reset code for ${target.full_Name}? Any earlier code for this user stops working.`)) return;
+      if (!await App.confirm({ title: 'Issue a reset code?', message: `${target.full_Name} will be able to set a new password with it. Any earlier code for this user stops working.`, ok: 'Issue code' })) return;
       b.disabled = true;
       try {
         const r = await Store.issueResetCode(target.user_ID);

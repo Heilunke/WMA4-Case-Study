@@ -41,8 +41,14 @@ const v = await App.shell('admin', 'reservations'); if (v) {
       <div class="modal-footer">${st !== 'cancelled' ? '<button class="btn btn-outline-danger me-auto" id="cancelBtn">Cancel reservation</button>' : ''}${st === 'pending' ? '<button class="btn btn-brand" id="confirmBtn"><i class="bi bi-check2-circle me-1"></i>Confirm &amp; issue e-tickets</button>' : ''}<button class="btn btn-secondary" data-bs-dismiss="modal">Close</button></div>`;
     const on = (i, f) => { const b = $(i); if (b) b.onclick = f; };
     on('confirmBtn', () => act(() => Store.confirm(id), 'Confirmed — e-tickets issued.', id));
-    on('cancelBtn', () => { if (confirm('Cancel this reservation? Seats return to inventory and tickets are voided.')) act(() => Store.cancel(id), 'Reservation cancelled; seats released.', id); });
-    on('paidBtn', () => { const m = prompt('Payment method received (e.g. Cash, GCash, Bank transfer):', 'Cash'); if (m) act(() => Store.markPaid(id, m), 'Payment recorded.', id); });
+    on('cancelBtn', async () => {
+      const yes = await App.confirm({ title: `Cancel ${r.code}?`, message: `The ${r.quantity} seat(s) go back to inventory and any e-tickets are voided. This cannot be undone.`, ok: 'Cancel reservation', cancel: 'Keep reservation', danger: true });
+      if (yes) act(() => Store.cancel(id), 'Reservation cancelled; seats released.', id);
+    });
+    on('paidBtn', async () => {
+      const m = await App.choose({ title: 'Record payment', message: `${r.code} · ${App.peso(r.total_amount)} from ${r.user.full_Name}`, label: 'Payment method received', options: ['Cash', 'GCash', 'Maya', 'Bank transfer'], value: 'Cash', ok: 'Mark as paid' });
+      if (m) act(() => Store.markPaid(id, m), 'Payment recorded.', id);
+    });
     modal.show();
   };
   document.querySelectorAll('#filters button').forEach(b => b.onclick = () => { filter = b.dataset.f; document.querySelectorAll('#filters button').forEach(x => x.classList.toggle('active', x === b)); draw(); });

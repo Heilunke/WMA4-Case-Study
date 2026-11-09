@@ -78,6 +78,57 @@ const App = (() => {
     document.getElementById('toasts').appendChild(el);
     const t = new bootstrap.Toast(el, { delay: 3500 }); t.show(); el.addEventListener('hidden.bs.toast', () => el.remove());
   }
+  /* In-app dialogs that replace the browser's confirm()/prompt() boxes so they match the app's look.
+     They may open on top of another open Bootstrap modal (e.g. reservation details): the dialog is
+     stacked above it, and the parent's focus trap is paused so keyboard focus can enter the dialog.
+
+       await App.confirm({ title, message, ok, cancel, danger })            -> true | false
+       await App.choose({ title, message, label, options, value, ok })      -> chosen string | null  */
+  function dialog({ title, message = '', ok = 'OK', cancel = 'Cancel', danger = false, field = '' }, read = () => true) {
+    return new Promise(resolve => {
+      const parents = [...document.querySelectorAll('.modal.show')].map(m => bootstrap.Modal.getInstance(m)).filter(Boolean);
+      parents.forEach(p => p._focustrap?.deactivate());
+      const el = document.createElement('div');
+      el.className = 'modal fade app-dialog'; el.tabIndex = -1;
+      el.setAttribute('aria-labelledby', 'appDialogTitle');
+      el.innerHTML = `<div class="modal-dialog modal-dialog-centered"><form class="modal-content" novalidate>
+        <div class="modal-header"><h2 class="modal-title h5" id="appDialogTitle">${esc(title)}</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+        <div class="modal-body">${message ? `<p class="mb-${field ? 3 : 0}">${esc(message)}</p>` : ''}${field}</div>
+        <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">${esc(cancel)}</button>
+          <button class="btn ${danger ? 'btn-danger' : 'btn-brand'}" data-ok>${esc(ok)}</button></div></form></div>`;
+      document.body.appendChild(el);
+      const m = new bootstrap.Modal(el);
+      let result = null;
+      el.querySelector('form').onsubmit = e => { e.preventDefault(); const v = read(el); if (v !== false) { result = v; m.hide(); } };
+      el.addEventListener('show.bs.modal', () => setTimeout(() => { const bd = [...document.querySelectorAll('.modal-backdrop')].at(-1); if (bd && parents.length) bd.classList.add('app-dialog-backdrop'); }));
+      el.addEventListener('shown.bs.modal', () => (el.querySelector('select, input') || el.querySelector('[data-ok]')).focus());
+      el.addEventListener('hidden.bs.modal', () => {
+        m.dispose(); el.remove();
+        if (parents.length) { document.body.classList.add('modal-open'); parents.forEach(p => p._focustrap?.activate()); }
+        resolve(result);
+      });
+      m.show();
+    });
+  }
+  const confirmDialog = opts => dialog(opts).then(v => v === true);
+  function choose({ label, options, value, ...opts }) {
+    const id = 'appDialogChoice';
+    const field = `<label class="form-label" for="${id}">${esc(label)}</label>
+      <select class="form-select" id="${id}">${options.map(o => `<option ${o === value ? 'selected' : ''}>${esc(o)}</option>`).join('')}<option value="__other">Other…</option></select>
+      <input class="form-control mt-2 d-none" id="${id}Other" maxlength="100" placeholder="Type the payment method" aria-label="Other payment method">
+      <div class="invalid-feedback">Enter the payment method.</div>`;
+    const p = dialog({ ...opts, field }, el => {
+      const sel = el.querySelector('select'), other = el.querySelector('input');
+      if (sel.value !== '__other') return sel.value;
+      const v = other.value.trim();
+      other.classList.toggle('is-invalid', !v);
+      return v || false;
+    });
+    const sel = document.getElementById(id), other = document.getElementById(id + 'Other');
+    sel.onchange = () => { other.classList.toggle('d-none', sel.value !== '__other'); if (sel.value === '__other') other.focus(); };
+    return p;
+  }
+
   /* Flash message that survives a redirect */
   const flash = (m, k) => sessionStorage.setItem('eticket_flash', JSON.stringify([m, k || 'success']));
   const showFlash = () => { const f = sessionStorage.getItem('eticket_flash'); if (f) { sessionStorage.removeItem('eticket_flash'); toast(...JSON.parse(f)); } };
@@ -101,5 +152,5 @@ const App = (() => {
         <a class="btn ${s.left ? 'btn-brand' : 'btn-outline-secondary disabled'} mt-2" href="${href}">${s.left ? 'Reserve tickets' : 'Sold out'}</a>
       <div class="barcode mt-1" aria-hidden="true"></div></div></article></div>`;
   };
-  return { root, esc, peso, fmtDate, fmtTime, fmtDT, user, setUser, logout, pill, home, shell, toast, flash, showFlash, qr, param, eventCard };
+  return { root, esc, peso, fmtDate, fmtTime, fmtDT, user, setUser, logout, pill, home, shell, toast, flash, showFlash, qr, param, eventCard, confirm: confirmDialog, choose };
 })();

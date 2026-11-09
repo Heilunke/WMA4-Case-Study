@@ -187,3 +187,7 @@ a{color:var(--brand)}
 .event-banner.c2{background:#6b4e2e}
 .event-banner.c3{background:#1a1611}
 .auth-wrap{background:#1a1611}
+
+/* in-app confirm/choose dialog (App.confirm / App.choose): stacks above an already open modal and its backdrop */
+.modal.app-dialog{z-index:1070}
+.modal-backdrop.app-dialog-backdrop{z-index:1065}
