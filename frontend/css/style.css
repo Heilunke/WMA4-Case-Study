@@ -191,3 +191,11 @@ a{color:var(--brand)}
 /* in-app confirm/choose dialog (App.confirm / App.choose): stacks above an already open modal and its backdrop */
 .modal.app-dialog{z-index:1070}
 .modal-backdrop.app-dialog-backdrop{z-index:1065}
+
+/* login page tab bar: three tabs on one line, as a segmented control */
+.auth-tabs{background:rgba(26,22,17,.07);border-radius:.75rem;padding:.25rem;gap:.25rem}
+.auth-tabs .nav-link{white-space:nowrap;padding:.5rem .75rem;border-radius:.55rem;font-weight:500}
+.auth-tabs .nav-link:not(.active):hover{background:rgba(26,22,17,.06)}
+/* small screens: show only the form (the earlier rule at the top is overridden by the later .auth-hero display:flex) */
+@media(max-width:991px){.auth-hero{display:none}.auth-card{padding:1.75rem 1.25rem}}
+@media(max-width:400px){.auth-wrap{padding:.5rem}.auth-card{padding:1.5rem 1rem}.auth-tabs .nav-link{padding:.45rem .5rem;font-size:.85rem}}
