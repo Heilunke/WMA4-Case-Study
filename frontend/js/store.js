@@ -1,4 +1,4 @@
-/* E-Ticket data layer — talks to the PHP/MySQL REST API (backend/).
+/* E-Ticket data layer — talks to the Laravel REST API (backend/).
    Reads are synchronous against an in-memory snapshot loaded by `await Store.init()` (App.shell does this
    for every page). Every change is an API call that is awaited, after which the snapshot is re-fetched,
    so the UI always shows what the database actually holds. Business rules (inventory, ticket codes,

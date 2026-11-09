@@ -1,8 +1,8 @@
 // End-to-end API test. Needs the server running AND a freshly seeded database:
-//   php backend/database/setup.php
+//   php backend/artisan migrate:fresh --seed && php backend/artisan cache:clear
 //   php -S localhost:8000 -t frontend backend/router.php
 //   node backend/tests/api-smoke.mjs [http://localhost:8000]
-// It creates and deletes its own data on top of the seed, so re-run setup.php before running it again.
+// It creates and deletes its own data on top of the seed, so reseed before running it again.
 
 const BASE = (process.argv[2] || 'http://localhost:8000') + '/api';
 let pass = 0, fail = 0;

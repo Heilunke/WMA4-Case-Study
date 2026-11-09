@@ -1,138 +1,177 @@
-# E-Ticket — Backend (PHP + MySQL REST API)
+# E-Ticket — Backend (Laravel 12 REST API + MySQL)
 
 WMA4 · Tarlac State University, College of Computer Studies · Group 2
 
-Plain PHP 8.1+ (PDO, no Composer needed) and MySQL/MariaDB. It serves the JSON API that
-the `frontend/` pages call. Laravel/Eloquent remains the planned Final-Term migration; the
-`Services/` classes hold all business rules so they can be moved over as-is.
+A **Laravel 12** JSON API with **Eloquent models, relationships, migrations and seeders**, serving the
+pages in [`../frontend`](../frontend). Business rules live in service classes (`app/Services/`), called by
+thin controllers (`app/Http/Controllers/Api/`).
 
 ## Run it
 
-**Requirements:** PHP 8.1+ with `pdo_mysql` and `mbstring`, and MySQL 8 or MariaDB 10.4+
-(XAMPP has all of this).
+**Requirements:** PHP 8.2+ with `pdo_mysql`, `mbstring`, `openssl`, `fileinfo`; MySQL 8 or MariaDB 10.4+
+(XAMPP has all of this); [Composer](https://getcomposer.org).
 
 ```bash
-# 1. configure (optional – defaults are root / empty password / database "eticket" on 127.0.0.1:3306)
-cp backend/.env.example backend/.env        # then edit DB_USER / DB_PASS if needed
+cd backend
+composer install                      # first time only (vendor/ is not in git)
+cp .env.example .env                  # first time only; edit DB_USERNAME / DB_PASSWORD if needed
+php artisan key:generate              # first time only
 
-# 2. create the database, tables and demo data  (DROPS and recreates the six tables + login_attempts!)
-php backend/database/setup.php              # add --no-seed for empty tables
+# create the "eticket" database first (phpMyAdmin → New, or: CREATE DATABASE eticket), then:
+php artisan migrate:fresh --seed      # DROPS and recreates the tables + demo data
 
-# 3. serve the frontend and the API on one origin
+cd ..
 php -S localhost:8000 -t frontend backend/router.php
 ```
 
-Open [http://localhost:8000](http://localhost:8000) and log in:
+Open <http://localhost:8000> and log in:
 
 | Role          | Email                 | Password    |
 | ------------- | --------------------- | ----------- |
 | Administrator | admin@eticket.test    | admin123    |
 | Attendee      | attendee@eticket.test | attendee123 |
 
-These demo passwords are for development only — change them before any real deployment.
+These demo passwords are for development only.
 
-**Under XAMPP instead:** put the repo in `htdocs/`, run `setup.php` once, and open
-`http://localhost/WMA4-Case-Study/frontend/`. The pages find the API at
-`/WMA4-Case-Study/backend/public/index.php/api` by themselves (set `window.ETICKET_API` before
-`js/store.js` to override). Alternatively import `database/schema.sql` in phpMyAdmin, then run
-`setup.php` only for the demo data.
+**Under XAMPP instead:** after the steps above, open `http://localhost/WMA4-Case-Study/frontend/`.
+The pages find the API at `/WMA4-Case-Study/backend/public/index.php/api` by themselves (set
+`window.ETICKET_API` before `js/store.js` to override).
+
+To reset the demo data: `php artisan migrate:fresh --seed` then `php artisan cache:clear` (clears login
+rate-limit counters).
+
+## Tests
+
+```bash
+cd e2e
+npm install && npx playwright install chromium   # first time only
+npm test          # reseed → API smoke test (110 checks) → Playwright browser tests (11) → reseed
+```
+
+Also import [`postman/E-Ticket.postman_collection.json`](postman/E-Ticket.postman_collection.json) into
+Postman (run *Auth → Login (admin)* first; it stores the CSRF token). The *Password reset & change*
+folder is self-contained.
+
+## Where things are (what to show in the defence)
+
+| Concept | File(s) |
+|---|---|
+| **Migrations** (schema, keys, FKs, CHECK constraints) | `database/migrations/2026_11_09_00000{1..6}_create_*_table.php` |
+| **Eloquent models + relationships** | `app/Models/` — `User`, `Event`, `TicketType`, `Reservation`, `AttendeeDetail`, `Payment` |
+| **Seeder** (demo data through the real services) | `database/seeders/DatabaseSeeder.php` |
+| **Routes** (access level on each group) | `routes/api.php` |
+| **Controllers** (MVC: thin, call the services) | `app/Http/Controllers/Api/` |
+| **Business rules** (inventory, e-tickets, check-in, expiry, accounts) | `app/Services/` — `ReservationService`, `EventService`, `UserService`, `ReportService`, `SnapshotService` |
+| **Middleware** (login + roles, CSRF header, JSON checks, expiry) | `app/Http/Middleware/` — `Authenticate`, `VerifyCsrfHeader`, `ApiRequest` |
+| **JSON errors** `{"error":{"message","code"}}` | `bootstrap/app.php` (`withExceptions`), `app/Exceptions/ApiException.php` |
+| **Validation** | `app/Support/Validator.php` |
+| **Settings** (hold hours, login limits, reset-code lifetime) | `config/eticket.php` ← `.env` |
+| **Dev-server router** (frontend + `/api` on one origin) | `router.php` |
+
+### Relationships
+
+```
+User           hasMany    Reservation           (the attendee who booked)
+User           hasMany    Event                 (createdEvents: the Administrator who created it)
+Event          belongsTo  User (creator)        · hasMany TicketType · hasManyThrough Reservation
+TicketType     belongsTo  Event                 · hasMany Reservation
+Reservation    belongsTo  User, TicketType      · hasMany AttendeeDetail · hasOne Payment
+AttendeeDetail belongsTo  Reservation           · belongsTo User (checkedInBy)
+Payment        belongsTo  Reservation           · belongsTo User (recordedBy)
+```
+
+Example: `Reservation::with(['attendees', 'payment', 'ticketType.event'])->find($id)` loads a
+reservation with everything the e-ticket page needs (`app/Services/SnapshotService.php`).
+
+### How a request flows
+
+`frontend/js/store.js` → `fetch('/api/reservations', …)` → `routes/api.php` → middleware
+(`ApiRequest` → `Authenticate` → `VerifyCsrfHeader`) → `ReservationController@store` →
+`ReservationService::reserve()` (`DB::transaction` + `lockForUpdate` on the ticket type) → Eloquent →
+MySQL → JSON back to the page.
 
 ## How the panel's comments are addressed
 
-| # | Comment                              | Where / how                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| - | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 1 | E-ticket underdeveloped              | `ReservationService::confirm()` issues one unique code per attendee (`TKT-<rsv>-<n>-<8 random chars>`, stored in `attendee_details.ticket_code`, UNIQUE). `GET /api/reservations/{id}/ticket` returns it only for confirmed reservations, only to the owner or an Administrator.                                                                                                                                                                                                                                 |
-| 2 | Admin vs Organizer                   | One role, `admin`, called **Administrator** everywhere.                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| 3 | Public registration = Attendee only  | `UserService::register()` hard-codes `role = 'attendee'`; a `role` field in the request is ignored. Only an Administrator can promote (`PUT /api/users/{id}/role`). The last Administrator cannot be demoted.                                                                                                                                                                                                                                                                                                    |
-| 4 | Payment scope                        | **No online gateway.** `payments` is a record: starts `unpaid` (free events: `paid`), and an Administrator marks it paid (`POST /api/reservations/{id}/payment`, stored with `recorded_by`).                                                                                                                                                                                                                                                                                                             |
-| 5 | Inventory logic                      | **Pending and Confirmed hold seats; Cancelled releases them.** `ticket_types.quantity_available` is remaining, `quantity_sold` is held. Every change runs in a transaction after `SELECT … FOR UPDATE` on the ticket-type row, so concurrent bookings cannot oversell (verified with parallel requests). Pending reservations still **unpaid** after `RESERVATION_HOLD_HOURS` (default 48) are cancelled automatically and their seats released; paid/free Pending ones wait for the Administrator. |
-| 6 | Attendee details vs multiple tickets | Exactly one `attendee_details` row per ticket; the API rejects a reservation whose attendee list does not match `quantity`.                                                                                                                                                                                                                                                                                                                                                                                          |
-| 7 | Check-in not a module                | `POST /api/checkin` validates a code: invalid/voided → `invalid`, other event → `wrong_event`, unconfirmed → `not_confirmed`, repeat scan → `already_used`, otherwise admits the attendee (`checked_in_at`, `checked_in_by`). A reservation with a checked-in attendee cannot be cancelled. `undo-checkin` reverses a mistake (only for a checked-in attendee of a confirmed reservation, inside a locked transaction).                                                                              |
-| 8 | Section J placeholders               | See *Section J* below.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| # | Comment | Where / how |
+|---|---|---|
+| 1 | E-ticket underdeveloped | `ReservationService::confirm()` issues one unique code per attendee (`TKT-<rsv>-<n>-<8 random chars>`, `attendee_details.ticket_code`, UNIQUE). `GET /api/reservations/{id}/ticket` returns it only for confirmed reservations, only to the owner or an Administrator. The page draws one QR code per ticket. |
+| 2 | Admin vs Organizer | One role, `admin`, called **Administrator** everywhere. |
+| 3 | Public registration = Attendee only | `UserService::register()` hard-codes `role = 'attendee'`; a `role` field in the request is ignored. Only an Administrator can promote (`PUT /api/users/{id}/role`); the last Administrator cannot be demoted. |
+| 4 | Payment scope | **No online gateway.** `payments` is a record: starts `unpaid` (free events: `paid`); an Administrator records it (`POST /api/reservations/{id}/payment`, stored with `recorded_by`). |
+| 5 | Inventory logic | **Pending and Confirmed hold seats; Cancelled releases them.** `quantity_available` = remaining, `quantity_sold` = held. Every change runs in `DB::transaction()` after `lockForUpdate()` on the ticket-type row, so concurrent bookings cannot oversell. Pending reservations still **unpaid** after `RESERVATION_HOLD_HOURS` (48) are cancelled automatically. |
+| 6 | Attendee details vs multiple tickets | Exactly one `attendee_details` row per ticket; a reservation whose attendee list does not match `quantity` is rejected. |
+| 7 | Check-in not a module | `POST /api/checkin` validates a code: `invalid` / `wrong_event` / `not_confirmed` / `already_used`, otherwise admits the attendee (`checked_in_at`, `checked_in_by`). A reservation with a checked-in attendee cannot be cancelled; `undo-checkin` reverses a mistake. |
 
 ## Changes to the proposal's data dictionary (Table 4)
 
-| Table                | Change                                                                                                                                                       |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `events`           | **+** `category VARCHAR(50)`, `description TEXT`, `created_at DATETIME`                                                                          |
-| `ticket_types`     | `UNIQUE (event_ID, type_name)`; counters are `UNSIGNED` so they can never go negative                                                                    |
-| `reservations`     | `quantity` constrained to 1–10                                                                                                                            |
-| `attendee_details` | **+** `ticket_code VARCHAR(30) UNIQUE NULL`, `checked_in_at DATETIME`, `checked_in_by` (FK → users). The `status` flag stays as "checked in". |
-| `payments`         | **+** `recorded_by` (FK → users); `payment_method` widened to `VARCHAR(100)`; `UNIQUE (reservation_ID)` makes it truly one-to-one             |
-| `users`            | **+** `session_version` (bumped on a password change to log out other sessions), `reset_code_hash`, `reset_expires_at`                           |
-| `login_attempts`   | **New supporting table** (not in the ERD): failed login / reset attempts for rate limiting; emails stored as SHA-256                                   |
-| all                  | Timestamps are stored in UTC; cascading deletes keep attendee/payment rows tied to their reservation                                                         |
+| Table | Change |
+|---|---|
+| `events` | **+** `category VARCHAR(50)`, `description TEXT`, `created_at DATETIME` |
+| `ticket_types` | `UNIQUE (event_ID, type_name)`; counters are `UNSIGNED` so they can never go negative; `CHECK (price >= 0)` |
+| `reservations` | `CHECK (quantity BETWEEN 1 AND 10)` |
+| `attendee_details` | **+** `ticket_code VARCHAR(30) UNIQUE NULL`, `checked_in_at DATETIME`, `checked_in_by` (FK → users) |
+| `payments` | **+** `recorded_by` (FK → users); `payment_method` `VARCHAR(100)`; `UNIQUE (reservation_ID)` makes it one-to-one |
+| `users` | **+** `session_version` (bumped on a password change to log out other sessions), `reset_code_hash`, `reset_expires_at` |
+| all | Timestamps stored in UTC; cascading deletes keep attendee/payment rows tied to their reservation |
 
 ## API
 
 Base path `/api`. JSON in, JSON out. Errors: `{"error":{"message":"…","code":"…"}}`.
-Access: **public**, **user** (any login), **admin**, **attendee**. Every non-GET request needs the
-`X-CSRF-Token` header (the token is returned by login/register/`/auth/me`/`/bootstrap`).
+Every non-GET request on a protected route needs the `X-CSRF-Token` header (returned by
+login / register / `/auth/me` / `/bootstrap`).
 
-| Method & path                                                       | Access                       | Purpose                                                                                                                    |
-| ------------------------------------------------------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `POST /auth/register`                                             | public                       | Create an **attendee** account and log in                                                                            |
-| `POST /auth/login` · `POST /auth/logout` · `GET /auth/me`   | public / user                | Session login (HttpOnly cookie); login is rate-limited (429)                                                               |
-| `POST /auth/reset-password`                                       | public                       | `{email, code, password}` — set a new password with an Administrator-issued code (rate-limited)                         |
-| `POST /auth/change-password`                                      | user                         | `{current_password, password}` — logs out the account's other sessions                                                  |
-| `GET /bootstrap`                                                  | user                         | Everything the caller may see (admins: all + users + report; attendees: the event catalogue + only their own reservations) |
-| `GET /events`                                                     | user                         | Event list                                                                                                                 |
-| `POST /events` · `PUT /events/{id}` · `DELETE /events/{id}` | admin                        | Event CRUD with its ticket types (`ticket_types: [{ticket_ID?, type_name, price, total}]`)                               |
-| `POST /reservations`                                              | attendee                     | `{ticket_ID, quantity, payment_method, attendees:[{full_name, contact_number}]}`                                         |
-| `GET /reservations/{id}`                                          | owner / admin                | Reservation + attendees + payment                                                                                          |
-| `POST /reservations/{id}/confirm`                                 | admin                        | Confirm and issue e-tickets                                                                                                |
-| `POST /reservations/{id}/cancel`                                  | owner (pending only) / admin | Cancel, release seats, void tickets                                                                                        |
-| `POST /reservations/{id}/payment`                                 | admin                        | Record payment `{payment_method}`                                                                                        |
-| `GET /reservations/{id}/ticket`                                   | owner / admin                | The e-tickets (confirmed only)                                                                                             |
-| `POST /checkin`                                                   | admin                        | `{ticket_code, event_ID?}`                                                                                               |
-| `POST /attendees/{id}/undo-checkin`                               | admin                        | Reverse a check-in                                                                                                         |
-| `GET /reports`                                                    | admin                        | Totals, status counts, per-event capacity / reserved / confirmed / checked-in / revenue                                    |
-| `GET /users` · `PUT /users/{id}/role`                          | admin                        | User list and role changes                                                                                                 |
-| `POST /users/{id}/reset-code`                                     | admin                        | Issue a one-time password reset code `{code, expires_at}` to hand to the user                                            |
+| Method & path | Access | Purpose |
+|---|---|---|
+| `POST /auth/register` | public | Create an **attendee** account and log in |
+| `POST /auth/login` · `POST /auth/logout` · `GET /auth/me` | public / user | Session login (HttpOnly cookie); login is rate-limited (429) |
+| `POST /auth/reset-password` | public | `{email, code, password}` with an Administrator-issued code (rate-limited) |
+| `POST /auth/change-password` | user | `{current_password, password}`; logs out the account's other sessions |
+| `GET /bootstrap` | user | Everything the caller may see (admins: all + users + report; attendees: catalogue + own reservations) |
+| `GET /events` | user | Event list |
+| `POST /events` · `PUT /events/{id}` · `DELETE /events/{id}` | admin | Event CRUD with ticket types `[{ticket_ID?, type_name, price, total}]` |
+| `POST /reservations` | attendee | `{ticket_ID, quantity, payment_method, attendees:[{full_name, contact_number}]}` |
+| `GET /reservations/{id}` | owner / admin | Reservation + attendees + payment |
+| `POST /reservations/{id}/confirm` | admin | Confirm and issue e-tickets |
+| `POST /reservations/{id}/cancel` | owner (pending) / admin | Cancel, release seats, void tickets |
+| `POST /reservations/{id}/payment` | admin | Record payment `{payment_method}` |
+| `GET /reservations/{id}/ticket` | owner / admin | The e-tickets (confirmed only) |
+| `POST /checkin` · `POST /attendees/{id}/undo-checkin` | admin | Validate a ticket code `{ticket_code, event_ID?}` · reverse a check-in |
+| `GET /reports` | admin | Totals, status counts, per-event capacity / reserved / confirmed / checked-in / revenue |
+| `GET /users` · `PUT /users/{id}/role` · `POST /users/{id}/reset-code` | admin | Users, role changes, one-time reset code |
 
 ## Security
 
-- **Passwords:** `password_hash()` / `password_verify()` (bcrypt), rehash on login when needed; unknown emails take comparable time and get the same error as a wrong password.
-- **SQL injection:** PDO prepared statements everywhere (native prepares, no string-built values).
-- **Sessions:** HttpOnly + SameSite=Lax cookie, `session_regenerate_id()` on login, destroyed on logout. The user is re-read from the DB each request, so a demotion or deletion applies immediately. The cookie is marked `Secure` whenever the request is HTTPS (`SESSION_SECURE=auto`; set `true` in production to force it; `TRUST_PROXY=true` only behind your own reverse proxy so `X-Forwarded-Proto/For` are honoured).
-- **Rate limiting:** after 5 failed logins for one email from one IP (or 50 from one IP) inside 15 minutes, `/auth/login` answers 429 even for the right password. Password-reset attempts are throttled the same way. Limits are set in `.env`.
-- **Password reset:** there is no e-mail server, so an Administrator issues a 10-character one-time code (Users page → *Reset code*, valid 30 minutes, stored only as SHA-256) and hands it to the user, who sets a new password under *Reset password* on the login page. A reset or a password change logs out every other session of that account.
-- **CSRF:** per-session token compared with `hash_equals` on every state-changing request.
-- **RBAC:** enforced in the router per route; attendees get 404 (not 403) for other people's reservations so ids cannot be probed.
-- **Validation:** server-side for every field (lengths, formats, ranges). The API stores text as typed; the frontend HTML-escapes on output.
+- **Passwords:** `Hash::make()` / `Hash::check()` (bcrypt), rehash on login when needed; unknown emails take comparable time and get the same error.
+- **SQL injection:** Eloquent / query builder with bound parameters everywhere.
+- **Sessions:** Laravel session guard, HttpOnly cookie, new session id at login, invalidated at logout; the user is re-read every request, so a demotion applies immediately.
+- **CSRF:** per-session token in the `X-CSRF-Token` header, compared with `hash_equals` (`VerifyCsrfHeader`).
+- **RBAC:** route middleware `eticket.auth`, `eticket.auth:admin`, `eticket.auth:attendee`; attendees get 404 (not 403) for other people's reservations so ids cannot be probed.
+- **Rate limiting:** Laravel `RateLimiter` — 5 failed logins per email+IP (or 50 per IP) in 15 minutes → 429 even for the right password; password-reset attempts likewise.
+- **Password reset:** no e-mail server, so an Administrator issues a 10-character one-time code (valid 30 min, stored only as SHA-256). A reset or password change logs out the account's other sessions.
+- **Validation:** server-side for every field (`app/Support/Validator.php`); the frontend HTML-escapes on output.
 - **Errors:** no stack traces or SQL in responses unless `APP_DEBUG=true`.
 
-Not included yet: e-mail verification and e-mailed reset links (needs a mail server), redirecting
-HTTP to HTTPS (configure that on the web server / host).
-
-## Section J — Expected Final-Term Technical Implementation (suggested text)
-
-| Technical area                | Planned implementation                                                                                                                                                                                                                                                                                                                   |
-| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| PHP / server-side processing  | Front controller + router; JSON endpoints for register, login, reserve, confirm, cancel, check-in and event CRUD; server-side validation (`Support/Validator`); try/catch turning exceptions into JSON errors with the right HTTP status.                                                                                              |
-| MySQL / relational database   | Six normalized InnoDB tables with PKs/FKs, UNIQUE and CHECK constraints (`database/schema.sql`); transactions with row locks around reserve / cancel / confirm / check-in so inventory stays consistent.                                                                                                                               |
-| CRUD / search / filter / sort | Events (CRUD, filter by date, category, venue/name); reservations (status filter + search by code, attendee, event); users (role management).                                                                                                                                                                                            |
-| Object-oriented PHP           | `UserService`, `EventService`, `ReservationService`, `SnapshotService`, `ReportService`; `Router`, `Request`, `Response`, `Database`, `Auth`; exception hierarchy `HttpException → ValidationException / UnauthorizedException / ForbiddenException / NotFoundException / ConflictException → SoldOutException`. |
-| Authentication / RBAC         | Session login; roles `admin` and `attendee`; route-level access levels; attendees only ever receive their own reservations.                                                                                                                                                                                                          |
-| Security                      | bcrypt hashing, prepared statements, CSRF tokens, validation, session regeneration, secure logout (see above).                                                                                                                                                                                                                           |
-| RESTful API                   | `/api/events`, `/api/reservations`, `/api/checkin`, `/api/reports`, `/api/users` returning JSON; Postman collection in `backend/postman/`.                                                                                                                                                                                   |
-| Laravel / Eloquent            | Port the services to controllers + Eloquent models (`User`, `Event`, `TicketType`, `Reservation`, `AttendeeDetail`, `Payment`) with migrations mirroring `schema.sql` and seeders mirroring `database/Seeder.php`.                                                                                                       |
-| Reports / analytics           | Totals, reservation-status doughnut, tickets reserved vs capacity, per-event paid revenue and check-in counts (`ReportService`, SQL aggregates).                                                                                                                                                                                       |
-| Testing / GitHub              | `tests/api-smoke.mjs` (110 assertions) and the Postman collection; feature branch per member, pull requests into `main`.                                                                                                                                                                                                             |
+Not included: e-mail verification / e-mailed reset links (needs a mail server); HTTP→HTTPS redirect
+(configure on the web server). Online deployment is not required for the Final; the system runs on XAMPP.
 
 ## Layout
 
 ```
 backend/
-  public/index.php      front controller (+ .htaccess for Apache)
-  router.php            router script for `php -S`
-  src/
-    bootstrap.php       autoloader, config, timezone
-    routes.php          the API surface
-    Core/               Config, Database, Request, Response, Router, exceptions
-    Support/            Auth (session + CSRF), Validator, Format (row → JSON)
-    Services/           User, Event, Reservation, Snapshot, Report  ← business rules
-  database/             schema.sql, setup.php, Seeder.php
-  tests/api-smoke.mjs   end-to-end API tests
-  postman/              Postman collection
+  app/
+    Models/                Eloquent models + relationships
+    Services/              business rules (reservation, event, user, report, snapshot)
+    Http/Controllers/Api/  thin controllers
+    Http/Middleware/       Authenticate (login + role), VerifyCsrfHeader, ApiRequest
+    Exceptions/            ApiException
+    Support/               Format (model → JSON), Validator
+  bootstrap/app.php        middleware group, aliases, JSON error rendering
+  config/eticket.php       business settings
+  database/migrations/     the six tables
+  database/seeders/        demo data
+  routes/api.php           the API surface
+  public/index.php         Laravel entry point (Apache / XAMPP)
+  router.php               `php -S` router: frontend + /api on one origin
+  tests/api-smoke.mjs      end-to-end API test (110 checks)
+  postman/                 Postman collection
 ```

@@ -3,14 +3,14 @@
 WMA4 · Tarlac State University, College of Computer Studies · Group 2
 
 Static HTML/CSS/JS pages (Bootstrap 5, Bootstrap Icons, Chart.js and a QR library from a CDN, so
-the first load needs internet). They talk to the PHP/MySQL REST API in `../backend/` through
+the first load needs internet). They talk to the Laravel REST API in `../backend/` through
 `js/store.js`.
 
 ## Run it
-From the repo root (needs PHP 8.1+ and MySQL/MariaDB — full steps in [`../backend/README.md`](../backend/README.md)):
+From the repo root (needs PHP 8.2+, Composer and MySQL/MariaDB — first-time setup in [`../backend/README.md`](../backend/README.md)):
 
 ```bash
-php backend/database/setup.php                      # create the database + demo data
+php backend/artisan migrate:fresh --seed            # create the tables + demo data
 php -S localhost:8000 -t frontend backend/router.php
 ```
 then open <http://localhost:8000>. Opening `index.html` straight from disk no longer works: the pages need the API.
@@ -20,7 +20,7 @@ then open <http://localhost:8000>. Opening `index.html` straight from disk no lo
 | Administrator | admin@eticket.test | admin123 |
 | Attendee | attendee@eticket.test | attendee123 |
 
-To reset the sample data, run `php backend/database/setup.php` again.
+To reset the sample data, run `php backend/artisan migrate:fresh --seed` again.
 
 ## How it is connected to the backend
 - `js/store.js` is the only file that calls the API. It loads a role-scoped snapshot with `GET /api/bootstrap`
@@ -49,5 +49,4 @@ To reset the sample data, run `php backend/database/setup.php` again.
 | 5 | Inventory logic | **Pending and Confirmed hold seats**; **Cancelled releases** them. Reservations with a checked-in attendee cannot be cancelled. |
 | 6 | Attendee details vs multiple tickets | The reserve form has **one attendee row per ticket**, and `attendee_details` has one row per ticket. |
 | 7 | Check-in not designed | `admin/checkin.html`: validate by code/QR scanner; rejects invalid, voided, wrong-event, unconfirmed and already-used tickets; shows live progress; undo. |
-| 8 | Section J placeholders | Suggested text is in [`../backend/README.md`](../backend/README.md#section-j--expected-final-term-technical-implementation-suggested-text). |
-| 9–11 | Member roles, timeline dates, hosting | Document items — fix in the report (timeline dates must fall after the Sept 25 submission; name the hosting, e.g. a specific PHP/MySQL host). |
+| 8–11 | Section J, member roles, timeline dates, hosting | Document items — fixed in the revised proposal (online deployment is not required; the system runs on XAMPP). |

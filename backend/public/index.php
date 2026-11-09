@@ -1,42 +1,20 @@
 <?php
-declare(strict_types=1);
 
-/**
- * Front controller – every /api/... request lands here.
- * Apache: backend/public/.htaccess rewrites to this file.
- * PHP dev server: backend/router.php includes it.
- */
+use Illuminate\Foundation\Application;
+use Illuminate\Http\Request;
 
-require dirname(__DIR__) . '/src/bootstrap.php';
+define('LARAVEL_START', microtime(true));
 
-use ETicket\Core\Config;
-use ETicket\Core\HttpException;
-use ETicket\Core\Request;
-use ETicket\Core\Response;
-
-try {
-    // Release seats held by unpaid Pending reservations past the hold window (see ReservationService).
-    // Never let housekeeping break the actual request.
-    try {
-        (new ETicket\Services\ReservationService())->expireStale();
-    } catch (Throwable $e) {
-        error_log('[eticket] expiry failed: ' . $e->getMessage());
-    }
-    $router = require BASE_PATH . '/src/routes.php';
-    $response = $router->dispatch(Request::capture());
-} catch (HttpException $e) {
-    $response = Response::error($e);
-} catch (PDOException $e) {
-    error_log('[eticket] database error: ' . $e->getMessage());
-    $response = new Response(['error' => [
-        'message' => Config::debug() ? $e->getMessage() : 'A database error occurred. Please try again.',
-        'code'    => 'database_error',
-    ]], 500);
-} catch (Throwable $e) {
-    error_log('[eticket] ' . $e::class . ': ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
-    $response = new Response(['error' => [
-        'message' => Config::debug() ? $e->getMessage() : 'Something went wrong on the server.',
-        'code'    => 'server_error',
-    ]], 500);
+// Determine if the application is in maintenance mode...
+if (file_exists($maintenance = __DIR__.'/../storage/framework/maintenance.php')) {
+    require $maintenance;
 }
-$response->send();
+
+// Register the Composer autoloader...
+require __DIR__.'/../vendor/autoload.php';
+
+// Bootstrap Laravel and handle the request...
+/** @var Application $app */
+$app = require_once __DIR__.'/../bootstrap/app.php';
+
+$app->handleRequest(Request::capture());
