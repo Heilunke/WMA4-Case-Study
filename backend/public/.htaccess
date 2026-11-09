@@ -1,0 +1,12 @@
+# Apache / XAMPP: send everything that is not a real file to the API front controller.
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteRule ^ index.php [QSA,L]
+</IfModule>
+
+# Pass the Authorization header through (not used yet, harmless) and keep dotfiles private.
+<IfModule mod_headers.c>
+  Header always set X-Content-Type-Options "nosniff"
+</IfModule>
