@@ -20,6 +20,8 @@ then open <http://localhost:8000>. Opening `index.html` straight from disk no lo
 | Administrator | admin@eticket.test | admin123 |
 | Attendee | attendee@eticket.test | attendee123 |
 
+The login page does not display these accounts; type them in.
+
 To reset the sample data, run `php backend/artisan migrate:fresh --seed` again.
 
 ## How it is connected to the backend
@@ -35,9 +37,10 @@ To reset the sample data, run `php backend/artisan migrate:fresh --seed` again.
   `…/backend/public/index.php/api`, detected automatically. Override with `window.ETICKET_API` before `js/store.js`.
 
 ## Screens
-- `index.html` — Login + Attendee-only registration
+- `index.html` — three tabs: **Log in**, **Sign up** (Attendee-only registration) and **Reset password** (with an Administrator-issued code)
 - `attendee/` — dashboard, browse/search events, reserve tickets, my reservations, e-ticket (QR, printable)
-- `admin/` — dashboard, manage events, reservations (confirm/cancel/mark paid), **check-in**, reports (doughnut chart + CSV), users/roles
+- `admin/` — dashboard, manage events, reservations (confirm/cancel/mark paid), **check-in**, reports (doughnut chart + CSV), users/roles and password reset codes
+- Every page — **Password** button in the sidebar to change your own password. Confirmations (cancel, delete, record payment) use the app's own dialogs (`App.confirm` / `App.choose` in `js/app.js`), not the browser's pop-ups.
 
 ## How the panel's comments are addressed
 | # | Comment | Design decision |

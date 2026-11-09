@@ -126,7 +126,6 @@ h1,h2,h3,h4,h5{letter-spacing:-.01em}
 .auth-hero ul{list-style:none;padding:0;margin:0;display:grid;gap:.6rem;color:#dbe3ff;font-size:.93rem}
 .auth-card{flex:1;display:flex;align-items:center;justify-content:center;padding:2.25rem 2rem}
 .auth-card .inner{width:100%;max-width:400px}
-.demo-box{background:#f1f4ff;border:1px dashed #9fb0f5;border-radius:10px;padding:.75rem 1rem;font-size:.85rem}
 @media(max-width:991px){.eticket .stub::before,.eticket .stub::after{display:none}.auth-wrap{padding:1rem}}
 
 /* ===== Throwback palette (tan paper · olive · black) =====
@@ -161,7 +160,6 @@ a{color:var(--brand)}
 .type-option{background:var(--paper)}
 .type-option:has(input:checked){border-color:var(--brand);background:#e9edd2}
 .attendee-row{background:#efe7cf}
-.demo-box{background:#efe9d3;border-color:#a9b27c}
 .perf{border-top-color:#b3a578}
 .stat .ico{border-left-color:#b3a578}
 .eticket .body::after{color:#8b8061}

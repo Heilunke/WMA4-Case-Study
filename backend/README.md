@@ -42,11 +42,15 @@ rate-limit counters).
 
 ## Tests
 
+The API smoke test needs fresh demo data and a running server:
+
 ```bash
-cd e2e
-npm install && npx playwright install chromium   # first time only
-npm test          # reseed → API smoke test (110 checks) → Playwright browser tests (11) → reseed
+php backend/artisan migrate:fresh --seed && php backend/artisan cache:clear
+php -S localhost:8000 -t frontend backend/router.php      # in a second terminal
+node backend/tests/api-smoke.mjs                          # must end with: 110 passed, 0 failed
 ```
+
+The test creates its own data, so reseed before running it again.
 
 Also import [`postman/E-Ticket.postman_collection.json`](postman/E-Ticket.postman_collection.json) into
 Postman (run *Auth → Login (admin)* first; it stores the CSRF token). The *Password reset & change*

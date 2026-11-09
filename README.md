@@ -6,7 +6,6 @@ WMA4 · Advanced Web Development · Tarlac State University, College of Computer
 |---|---|
 | [`frontend/`](frontend/README.md) | Browser UI (HTML/CSS/JS, Bootstrap) |
 | [`backend/`](backend/README.md) | Laravel 12 REST API + MySQL: Eloquent models, migrations, seeders, API tests, Postman |
-| `e2e/` | Playwright browser tests + one-command test runner |
 | `context/` | Proposal and the panel's comments |
 
 ## Quick start

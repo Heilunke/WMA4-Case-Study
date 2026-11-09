@@ -30,8 +30,6 @@
           <button class="btn btn-brand w-100 py-2">Log in</button>
         </form>
         <div class="text-center mt-2"><button type="button" class="btn btn-link btn-sm" id="forgotLink" data-go="#resetPane">Forgot password?</button></div>
-        <div class="demo-box mt-4"><strong>Demo accounts</strong><br>Administrator: admin@eticket.test / admin123<br>Attendee: attendee@eticket.test / attendee123
-          <div class="mt-2 d-flex gap-2"><button class="btn btn-sm btn-outline-primary" data-fill="admin">Use admin</button><button class="btn btn-sm btn-outline-primary" data-fill="attendee">Use attendee</button></div></div>
       </div>
       <div class="tab-pane fade" id="registerPane" role="tabpanel">
         <h2 class="h4 mb-1">Join as an attendee</h2>
@@ -85,5 +83,4 @@ document.getElementById('resetForm').onsubmit = async ev => {
     msg.className = 'alert alert-success'; msg.textContent = 'Password changed. Log in with your new password.';
   } catch (e) { fail(e); } finally { btn.disabled = false; }
 };
-document.querySelectorAll('[data-fill]').forEach(b => b.onclick = () => { const a = b.dataset.fill === 'admin'; lEmail.value = a ? 'admin@eticket.test' : 'attendee@eticket.test'; lPass.value = a ? 'admin123' : 'attendee123'; });
 </script></body></html>
