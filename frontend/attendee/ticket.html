@@ -9,8 +9,8 @@
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="../js/store.js"></script><script src="../js/app.js"></script>
-<script>
-const v = App.shell('attendee', 'reservations'); if (v) {
+<script type="module">
+const v = await App.shell('attendee', 'reservations'); if (v) {
   const u = App.user(), raw = Store.resById(App.param('id'));
   if (!raw || raw.user_ID !== u.user_ID) v.innerHTML = '<div class="alert alert-warning">Reservation not found. <a href="my-reservations.html">Back</a></div>';
   else {

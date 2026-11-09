@@ -9,8 +9,8 @@
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="../js/store.js"></script><script src="../js/app.js"></script>
-<script>
-const v = App.shell('admin', 'reports'); if (v) {
+<script type="module">
+const v = await App.shell('admin', 'reports'); if (v) {
   const r = Store.report(), t = r.totals, b = r.byStatus, rev = r.perEvent.reduce((n, p) => n + p.revenue, 0);
   v.innerHTML = `<div class="page-head"><h1>Reports &amp; analytics</h1><button class="btn btn-outline-secondary" id="csv"><i class="bi bi-download me-1"></i>Export CSV</button></div>
     <div class="row g-3 mb-4">${[['Total events', t.events], ['Total reservations', t.reservations], ['Registered users', t.users], ['Payments recorded', '₱' + rev.toLocaleString('en-PH', { minimumFractionDigits: 2 })]].map(([l, n]) => `<div class="col-sm-6 col-xl-3"><div class="card stat"><div class="label">${l}</div><div class="value">${n}</div></div></div>`).join('')}</div>

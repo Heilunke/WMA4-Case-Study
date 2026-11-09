@@ -9,16 +9,33 @@
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="../js/store.js"></script><script src="../js/app.js"></script>
-<script>
-const v = App.shell('admin', 'users'); if (v) {
+<script type="module">
+const v = await App.shell('admin', 'users'); if (v) {
   const me = App.user();
   v.innerHTML = `<div class="page-head"><div><h1>Users</h1><div class="text-muted-2">Public sign-up creates Attendees only. Promote a trusted user to Administrator here.</div></div></div>
-    <div class="card p-3"><div class="table-wrap"><table class="table align-middle mb-0"><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Joined</th><th>Reservations</th></tr></thead><tbody id="rows"></tbody></table></div></div>`;
+    <div class="card p-3"><div class="table-wrap"><table class="table align-middle mb-0"><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Joined</th><th>Reservations</th><th></th></tr></thead><tbody id="rows"></tbody></table></div></div>
+    <div class="modal fade" id="resetModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content" id="resetBody"></div></div></div>`;
+  const resetModal = new bootstrap.Modal(document.getElementById('resetModal'));
   const draw = () => {
     document.getElementById('rows').innerHTML = Store.users().map(u => `<tr><td class="fw-semibold">${App.esc(u.full_Name)}${u.user_ID === me.user_ID ? ' <span class="badge text-bg-light">You</span>' : ''}</td><td>${App.esc(u.email)}</td>
       <td><select class="form-select form-select-sm" style="max-width:160px" data-uid="${u.user_ID}" aria-label="Role for ${App.esc(u.full_Name)}" ${u.user_ID === me.user_ID ? 'disabled' : ''}><option value="attendee" ${u.role === 'attendee' ? 'selected' : ''}>Attendee</option><option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Administrator</option></select></td>
-      <td>${App.fmtDT(u.created_at)}</td><td>${Store.db().reservations.filter(r => r.user_ID === u.user_ID).length}</td></tr>`).join('');
-    document.querySelectorAll("[data-uid]").forEach(s => s.onchange = () => { try { Store.setRole(s.dataset.uid, s.value); App.toast('Role updated.'); } catch (e) { App.toast(e.message, 'danger'); draw(); } });
+      <td>${App.fmtDT(u.created_at)}</td><td>${Store.reservationsOf(u.user_ID).length}</td>
+      <td class="text-end">${u.user_ID === me.user_ID ? '' : `<button class="btn btn-sm btn-outline-secondary text-nowrap" data-reset="${u.user_ID}"><i class="bi bi-key me-1"></i>Reset code</button>`}</td></tr>`).join('');
+    document.querySelectorAll("[data-uid]").forEach(s => s.onchange = async () => { try { await Store.setRole(s.dataset.uid, s.value); App.toast('Role updated.'); } catch (e) { App.toast(e.message, 'danger'); draw(); } });
+    document.querySelectorAll('[data-reset]').forEach(b => b.onclick = async () => {
+      const target = Store.userById(b.dataset.reset);
+      if (!confirm(`Issue a password reset code for ${target.full_Name}? Any earlier code for this user stops working.`)) return;
+      b.disabled = true;
+      try {
+        const r = await Store.issueResetCode(target.user_ID);
+        document.getElementById('resetBody').innerHTML = `<div class="modal-header"><h2 class="modal-title h5">Reset code for ${App.esc(target.full_Name)}</h2><button class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+          <div class="modal-body"><p class="small">Give this code to the user in person or by phone. They enter it under <strong>Forgot password</strong> on the login page with their email and a new password. It works once and expires at <strong>${App.fmtDT(r.expires_at)}</strong>.</p>
+          <div class="display-6 font-monospace text-center p-3 border rounded user-select-all">${App.esc(r.code)}</div>
+          <p class="small text-muted-2 mt-3 mb-0">This code is shown only now; it is not stored in readable form.</p></div>
+          <div class="modal-footer"><button class="btn btn-secondary" data-bs-dismiss="modal">Done</button></div>`;
+        resetModal.show();
+      } catch (e) { App.toast(e.message, 'danger'); } finally { b.disabled = false; }
+    });
   };
   draw();
 }

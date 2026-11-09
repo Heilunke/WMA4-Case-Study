@@ -9,8 +9,8 @@
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="../js/store.js"></script><script src="../js/app.js"></script>
-<script>
-const v = App.shell('admin', 'reservations'); if (v) {
+<script type="module">
+const v = await App.shell('admin', 'reservations'); if (v) {
   let filter = 'all', q = ''; const $ = id => document.getElementById(id);
   v.innerHTML = `<div class="page-head"><h1>Reservations</h1></div>
     <div class="card p-3"><div class="d-flex flex-wrap gap-2 justify-content-between mb-3">
@@ -25,7 +25,8 @@ const v = App.shell('admin', 'reservations'); if (v) {
     $('rows').innerHTML = list.length ? list.map(r => `<tr tabindex="0" data-id="${r.reservation_ID}"><td class="fw-semibold">${r.code}</td><td>${App.esc(r.user.full_Name)}</td><td>${App.esc(r.event.event_name)}</td><td>${App.esc(r.ticket.type_name)}</td><td>${r.quantity}</td><td>${App.peso(r.total_amount)}</td><td>${App.pill(r.payment.payment_status)}</td><td>${App.pill(r.reservation_status)}</td></tr>`).join('') : '<tr><td colspan="8" class="text-center text-muted-2 py-4">No reservations found.</td></tr>';
     document.querySelectorAll('#rows tr[data-id]').forEach(tr => { tr.onclick = () => open(+tr.dataset.id); tr.onkeydown = e => { if (e.key === 'Enter') open(+tr.dataset.id); }; });
   };
-  const act = (fn, msg, id) => { try { fn(); App.toast(msg); draw(); open(id); } catch (e) { App.toast(e.message, 'danger'); } };
+  let working = false; // ignore repeat clicks while a request is in flight
+  const act = async (fn, msg, id) => { if (working) return; working = true; try { await fn(); App.toast(msg); draw(); open(id); } catch (e) { App.toast(e.message, 'danger'); } finally { working = false; } };
   const open = id => {
     const r = Store.resView(Store.resById(id)), st = r.reservation_status, pay = r.payment;
     $('body').innerHTML = `<div class="modal-header"><h2 class="modal-title h5">${r.code} · ${App.esc(r.event.event_name)}</h2><button class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>

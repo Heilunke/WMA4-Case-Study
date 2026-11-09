@@ -9,8 +9,8 @@
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="../js/store.js"></script><script src="../js/app.js"></script>
-<script>
-const v = App.shell('attendee', 'events'); if (v) {
+<script type="module">
+const v = await App.shell('attendee', 'events'); if (v) {
   const ev = Store.eventById(App.param('event'));
   if (!ev) { v.innerHTML = '<div class="alert alert-warning">Event not found. <a href="events.html">Back to events</a></div>'; }
   else {
@@ -43,7 +43,7 @@ const v = App.shell('attendee', 'events'); if (v) {
         <dl class="mb-3 small" id="sum"></dl>
         <div class="d-flex justify-content-between align-items-baseline border-top pt-3"><span>Total</span><span class="fs-4 fw-bold" id="total"></span></div>
         <button class="btn btn-brand w-100 py-2 mt-3" ${first ? '' : 'disabled'}>Submit reservation</button>
-        <div class="small text-muted-2 mt-3"><i class="bi bi-info-circle"></i> Your seats are held as <strong>Pending</strong> until an Administrator confirms. Once confirmed, your e-ticket (QR code) appears in My Reservations. Cancelling releases the seats.</div></div></div>
+        <div class="small text-muted-2 mt-3"><i class="bi bi-info-circle"></i> Your seats are held as <strong>Pending</strong> until an Administrator confirms. Once confirmed, your e-ticket (QR code) appears in My Reservations. Cancelling releases the seats.${Store.holdHours() ? ` <strong>Unpaid reservations are cancelled automatically after ${Store.holdHours()} hours</strong>, so pay at the venue office or send your transfer reference before then.` : ''}</div></div></div>
     </form>`;
     const $ = id => document.getElementById(id), qty = $('qty');
     const sel = () => Store.typeById(document.querySelector('[name=type]:checked')?.value);
@@ -61,13 +61,17 @@ const v = App.shell('attendee', 'events'); if (v) {
     document.querySelectorAll('[name=type]').forEach(r => r.onchange = drawAttendees);
     qty.oninput = drawAttendees; $('minus').onclick = () => { qty.value = Math.max(1, +qty.value - 1); drawAttendees(); }; $('plus').onclick = () => { qty.value = +qty.value + 1; drawAttendees(); };
     drawAttendees();
-    $('form').onsubmit = e => {
+    $('form').onsubmit = async e => {
       e.preventDefault();
+      const btn = $('form').querySelector('button:not([type=button])'); btn.disabled = true;
       try {
         const attendees = [...document.querySelectorAll('#attendees .attendee-row')].map(r => ({ full_name: r.querySelector('.an').value, contact_number: r.querySelector('.ac').value }));
-        const r = Store.reserve(u.user_ID, sel().ticket_ID, +qty.value, attendees, $('method').value);
+        const r = await Store.reserve(sel().ticket_ID, +qty.value, attendees, $('method').value);
         App.flash(`Reservation ${Store.resCode(r)} submitted — status: Pending.`); location.href = 'my-reservations.html';
-      } catch (er) { $('err').textContent = er.message; $('err').classList.remove('d-none'); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+      } catch (er) {
+        btn.disabled = false; $('err').textContent = er.message; $('err').classList.remove('d-none'); window.scrollTo({ top: 0, behavior: 'smooth' });
+        if (er.code === 'sold_out') setTimeout(() => location.reload(), 2500); // availability changed: show fresh numbers
+      }
     };
   }
 }
