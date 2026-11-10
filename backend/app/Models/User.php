@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 
 /**
- * An account: role 'admin' (Administrator) or 'attendee'.
+ * A user account. The role is either 'admin' or 'attendee'.
  *
  * @property int $user_ID
  * @property string $full_Name
@@ -23,10 +23,10 @@ class User extends Authenticatable
     protected $guarded = ['user_ID'];
     protected $hidden = ['password_hash', 'reset_code_hash', 'reset_expires_at', 'session_version'];
 
-    /** Laravel's Auth reads the hash from this column instead of the default "password". */
+    /** Our password column is password_hash, not Laravel's default "password", so we tell Laravel here. */
     protected $authPasswordName = 'password_hash';
 
-    /** No "remember me" column in this schema. */
+    /** We don't have a "remember me" feature, so there's no column for it. */
     public function getRememberTokenName()
     {
         return '';
@@ -37,13 +37,13 @@ class User extends Authenticatable
         return $this->role === 'admin';
     }
 
-    /** One user has many reservations (as the attendee who booked). */
+    /** A user can have many reservations. */
     public function reservations(): HasMany
     {
         return $this->hasMany(Reservation::class, 'user_ID', 'user_ID');
     }
 
-    /** One Administrator creates many events. */
+    /** An admin can create many events. */
     public function createdEvents(): HasMany
     {
         return $this->hasMany(Event::class, 'user_ID', 'user_ID');

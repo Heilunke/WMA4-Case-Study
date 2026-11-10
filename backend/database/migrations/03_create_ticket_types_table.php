@@ -5,8 +5,8 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-/* TICKET_TYPES — inventory per ticket type (panel comment #5).
-   quantity_available = seats left; quantity_sold = seats held by Pending + Confirmed reservations. */
+/* TICKET_TYPES table - the seats of each ticket type (from the panel's comment about inventory).
+   quantity_available = seats left, quantity_sold = seats taken by Pending and Confirmed reservations. */
 return new class extends Migration
 {
     public function up(): void
@@ -15,8 +15,8 @@ return new class extends Migration
             $table->increments('ticket_ID');
             $table->unsignedInteger('event_ID');
             $table->string('type_name', 50);
-            $table->decimal('price', 8, 2)->default(0);                // 0.00 = free
-            $table->unsignedInteger('quantity_available');           // UNSIGNED: can never go negative
+            $table->decimal('price', 8, 2)->default(0);                // 0.00 means the event is free
+            $table->unsignedInteger('quantity_available');           // UNSIGNED so it can never be negative
             $table->unsignedInteger('quantity_sold')->default(0);
 
             $table->unique(['event_ID', 'type_name'], 'uq_ticket_type_per_event');

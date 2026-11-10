@@ -11,8 +11,8 @@ use App\Services\UserService;
 use Illuminate\Database\Seeder;
 
 /**
- * Demo data (same as backend/database/Seeder.php), created through the real services so every
- * business rule applies. Run with: php artisan migrate:fresh --seed
+ * Our sample data for testing and the demo. We add it using our own services, so the same
+ * rules are followed (like the seat counts). Run it with: php artisan migrate:fresh --seed
  *
  *   Administrator: admin@eticket.test / admin123
  *   Attendees:     attendee@eticket.test, juan@eticket.test, ana@eticket.test / attendee123

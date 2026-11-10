@@ -9,14 +9,14 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 
-/** Ticket validation at the entrance (Administrator). */
+/** Checking the tickets at the entrance (admin only). */
 class CheckInController extends Controller
 {
     public function __construct(private ReservationService $reservations)
     {
     }
 
-    /** POST /checkin — {ticket_code, event_ID?} */
+    /** POST /checkin - the ticket code, and the event (optional) */
     public function store(Request $request): JsonResponse
     {
         return $this->json($this->reservations->checkIn($request->json('ticket_code', ''), $request->json('event_ID'), $this->user()->user_ID));

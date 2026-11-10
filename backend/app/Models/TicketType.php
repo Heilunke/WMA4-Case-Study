@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-/** A ticket type of an event (e.g. Regular, VIP) and its seat inventory. */
+/** A ticket type of an event (example: Regular or VIP) and how many seats it has. */
 class TicketType extends Model
 {
     protected $table = 'ticket_types';

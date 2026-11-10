@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
-/** A reservation (RSV-###): one ticket type × quantity, one attendee row per ticket, one payment record. */
+/** A reservation (shown as RSV-###). It has one ticket type, a quantity, one attendee per ticket and one payment. */
 class Reservation extends Model
 {
     protected $table = 'reservations';
@@ -15,7 +15,7 @@ class Reservation extends Model
     public $timestamps = false;
     protected $guarded = ['reservation_ID'];
 
-    /** The attendee account that booked it. */
+    /** The attendee who made the reservation. */
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class, 'user_ID', 'user_ID');

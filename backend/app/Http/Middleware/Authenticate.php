@@ -9,11 +9,12 @@ use Illuminate\Support\Facades\Auth;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * Route access levels (RBAC):  ->middleware('eticket.auth')         any logged-in user
- *                              ->middleware('eticket.auth:admin')   Administrators only
- *                              ->middleware('eticket.auth:attendee') attendees only
- * The user is re-read from the database on every request (Laravel's session guard), so a demotion
- * applies immediately; a password change elsewhere (session_version bumped) logs this session out.
+ * Checks who can use a route (our RBAC):
+ *   eticket.auth           = any logged-in user
+ *   eticket.auth:admin     = admin only
+ *   eticket.auth:attendee  = attendee only
+ * The user is loaded from the database on every request, so if the admin changes someone's role
+ * it works right away. If the password was changed on another device, this session gets logged out.
  */
 class Authenticate
 {

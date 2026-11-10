@@ -8,7 +8,7 @@ use App\Services\SnapshotService;
 use App\Support\Format;
 use Illuminate\Http\JsonResponse;
 
-/** GET /api/bootstrap — everything the logged-in user may see, in one call (role-scoped). */
+/** GET /api/bootstrap - gives the page all the data the logged-in user is allowed to see, in one request. */
 class BootstrapController extends Controller
 {
     public function __invoke(SnapshotService $snapshots): JsonResponse

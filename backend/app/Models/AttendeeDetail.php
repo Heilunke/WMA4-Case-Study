@@ -5,7 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-/** One attendee = one ticket. ticket_code is the e-ticket (QR); status = checked in. */
+/** One row = one ticket. ticket_code is the e-ticket (the QR), and status tells if they already checked in. */
 class AttendeeDetail extends Model
 {
     protected $table = 'attendee_details';
@@ -18,7 +18,7 @@ class AttendeeDetail extends Model
         return $this->belongsTo(Reservation::class, 'reservation_ID', 'reservation_ID');
     }
 
-    /** The Administrator who admitted the attendee at the entrance. */
+    /** The admin who checked this attendee in at the entrance. */
     public function checkedInBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'checked_in_by', 'user_ID');

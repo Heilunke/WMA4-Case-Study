@@ -6,8 +6,8 @@ use App\Exceptions\ApiException;
 use DateTimeImmutable;
 
 /**
- * Small server-side validation helpers with user-facing messages.
- * Every one throws ApiException::validation (HTTP 422).
+ * Our validation functions for the inputs, with messages the user can understand.
+ * If the input is wrong they throw a 422 error (ApiException::validation).
  */
 final class Validator
 {
@@ -46,7 +46,7 @@ final class Validator
         if (!is_string($v) || strlen($v) < 6) {
             throw ApiException::validation('Password must be at least 6 characters.');
         }
-        if (strlen($v) > 72) { // bcrypt only uses the first 72 bytes
+        if (strlen($v) > 72) { // bcrypt only reads the first 72 characters, so we limit it
             throw ApiException::validation('Password must be at most 72 characters.');
         }
         return $v;

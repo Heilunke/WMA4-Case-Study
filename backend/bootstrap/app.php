@@ -22,14 +22,14 @@ return Application::configure(basePath: dirname(__DIR__))
         web: __DIR__.'/../routes/web.php',
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
-        // The JSON API lives under /api with its own session-based middleware group (see below).
+        // Our API routes are under /api and use our own middleware group (see below).
         then: function () {
             Route::middleware('eticket')->prefix('api')->group(base_path('routes/api.php'));
         },
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        // Session cookie for the API, but no Laravel form-CSRF/XSRF cookie: the API uses its own
-        // X-CSRF-Token header check (eticket.csrf), which the frontend sends on every change.
+        // We need the session cookie for login, but not Laravel's form CSRF, because our API checks
+        // the X-CSRF-Token header instead (eticket.csrf). The frontend sends it on every change.
         $middleware->group('eticket', [
             EncryptCookies::class,
             AddQueuedCookiesToResponse::class,
@@ -43,7 +43,7 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        // Every /api error is JSON: {"error":{"message","code"}} with the right HTTP status.
+        // All /api errors are sent as JSON {"error":{"message","code"}} with the correct status code.
         $exceptions->render(function (Throwable $e, Request $request) {
             if (!$request->is('api', 'api/*')) {
                 return null;
@@ -57,6 +57,6 @@ return Application::configure(basePath: dirname(__DIR__))
             };
             return response()->json($body, $status, ['X-Content-Type-Options' => 'nosniff', 'Cache-Control' => 'no-store'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         });
-        // Expected API errors (4xx) are not worth a log entry.
+        // Normal user errors (like wrong input) don't need to be written in the log file.
         $exceptions->dontReport([ApiException::class]);
     })->create();

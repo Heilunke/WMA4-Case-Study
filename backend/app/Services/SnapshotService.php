@@ -12,17 +12,16 @@ use App\Models\User;
 use App\Support\Format;
 
 /**
- * Reads data in the shapes the front end uses, scoped by role:
- *   Administrator – everything.
- *   Attendee      – the whole event catalogue but ONLY their own reservations, attendees,
- *                   payments and user row.
+ * Gets the data that the pages need, depending on who is logged in:
+ *   Admin    - sees everything.
+ *   Attendee - sees all the events, but only their OWN reservations, attendees, payments and account.
  */
 class SnapshotService
 {
     public function forUser(User $user): array
     {
         $admin = $user->isAdmin();
-        // For attendees every reservation-related query is narrowed to their own reservations.
+        // If it's an attendee, we only get the rows that belong to their own reservations.
         $mine = fn ($q) => $admin ? $q : $q->whereIn('reservation_ID', Reservation::where('user_ID', $user->user_ID)->select('reservation_ID'));
 
         $data = [
@@ -40,9 +39,9 @@ class SnapshotService
     }
 
     /**
-     * GET /api/reservations — newest first, joined with event, ticket type, payment, booker and attendees.
-     * Administrators get every reservation; attendees only their own.
-     * Optional filters: status (pending | confirmed | cancelled) and q (searches RSV code, booker, event, attendee names).
+     * GET /api/reservations - list of reservations (newest first) with the event, ticket type, payment,
+     * who booked it and the attendees. The admin sees all of them, attendees only see their own.
+     * Filters: status (pending, confirmed or cancelled) and q (search by RSV code, name or event).
      */
     public function reservationList(User $user, array $filters): array
     {
@@ -60,7 +59,7 @@ class SnapshotService
         $q = trim((string) ($filters['q'] ?? ''));
         if ($q !== '') {
             $like = '%' . $q . '%';
-            $id = preg_match('/^(?:RSV-)?0*(\d+)$/i', $q, $m) ? (int) $m[1] : null; // "RSV-003" or "3"
+            $id = preg_match('/^(?:RSV-)?0*(\d+)$/i', $q, $m) ? (int) $m[1] : null; // so both "RSV-003" and "3" work
             $query->where(function ($w) use ($like, $id) {
                 $w->whereHas('user', fn ($u) => $u->where('full_Name', 'like', $like))
                     ->orWhereHas('ticketType.event', fn ($e) => $e->where('event_name', 'like', $like))
@@ -82,11 +81,11 @@ class SnapshotService
         ])->all();
     }
 
-    /** One reservation with its attendees, payment, ticket type and event — via Eloquent relationships. */
+    /** Gets one reservation with its attendees, payment, ticket type and event (using the Eloquent relationships). */
     public function reservationFor(int $id, User $user): array
     {
         $r = Reservation::with(['attendees', 'payment', 'ticketType.event'])->find($id);
-        // Same error for "missing" and "someone else's" so ids cannot be probed.
+        // Same error if it doesn't exist or if it's someone else's, so people can't guess other reservation ids.
         if (!$r || (!$user->isAdmin() && (int) $r->user_ID !== (int) $user->user_ID)) {
             throw ApiException::notFound('Reservation not found.');
         }

@@ -9,14 +9,14 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 
-/** /api/events — list and detail (any user); create / update / delete (Administrator). */
+/** /api/events - anyone logged in can view events, only the admin can add, edit or delete. */
 class EventController extends Controller
 {
     public function __construct(private EventService $events)
     {
     }
 
-    /** GET /events?q=&category=&date=&from= — each event with its ticket types and seat counts. */
+    /** GET /events - list of events with their ticket types and seats. Filters: q, category, date, from. */
     public function index(Request $request): JsonResponse
     {
         return $this->json(['events' => $this->events->catalog($request->query())]);

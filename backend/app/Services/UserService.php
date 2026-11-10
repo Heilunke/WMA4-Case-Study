@@ -11,12 +11,12 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\RateLimiter;
 
-/** Accounts: registration (attendee only), authentication, password reset/change and roles. */
+/** Everything about accounts: sign up (attendee only), login, password reset/change and roles. */
 class UserService
 {
-    private const RESET_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no I, O, 0, 1
+    private const RESET_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no I, O, 0 and 1 so the code is easy to read
 
-    /** Public registration. The role is NEVER read from the request (panel comment #3). */
+    /** Public sign up. We never take the role from the request, it's always attendee (from the panel's comment). */
     public function register(array $in): array
     {
         $name = Validator::string($in['full_Name'] ?? null, 'Full name', 1, 100);
@@ -36,7 +36,7 @@ class UserService
                 'created_at'    => Format::nowUtc(),
             ]);
         } catch (QueryException $e) {
-            if ((int) ($e->errorInfo[1] ?? 0) === 1062) { // duplicate key on uq_users_email
+            if ((int) ($e->errorInfo[1] ?? 0) === 1062) { // 1062 = MySQL duplicate entry, meaning the email is already used
                 throw ApiException::conflict('That email is already registered.', 'email_taken');
             }
             throw $e;
@@ -45,8 +45,8 @@ class UserService
     }
 
     /**
-     * Verifies credentials, rate-limited per email+IP and per IP. "Unknown email" and "wrong password"
-     * get the same message and comparable time.
+     * Checks the email and password. It's rate-limited (too many wrong tries = blocked for a while).
+     * Wrong email and wrong password give the same message so nobody can find out which emails exist.
      */
     public function authenticate(mixed $email, mixed $password, string $ip): User
     {
@@ -59,7 +59,7 @@ class UserService
 
         $user = User::where('email', $email)->first();
         if (!$user) {
-            Hash::make($password); // burn comparable time for unknown emails
+            Hash::make($password); // takes about the same time as a real check, so the response time doesn't give it away
             $this->fail('login', $email, $ip);
             throw $fail;
         }
@@ -74,7 +74,7 @@ class UserService
         return $user;
     }
 
-    /* ---------------- password reset (no e-mail server: an Administrator hands over the code) ---------------- */
+    /* ---------------- password reset (we don't have an email server, so the admin gives the code to the user) ---------------- */
 
     /** @return array{code:string,expires_at:string} */
     public function issueResetCode(int $userId): array
@@ -89,7 +89,7 @@ class UserService
         return ['code' => $code, 'expires_at' => Format::iso($expires)];
     }
 
-    /** Public: new password with email + valid code. Single-use; logs out every session of the account. */
+    /** Sets a new password using the email and the reset code. The code only works once, and it logs out all the account's other sessions. */
     public function resetPassword(array $in, string $ip): void
     {
         $email = Validator::email($in['email'] ?? null);
@@ -117,10 +117,10 @@ class UserService
             throw ApiException::validation('The reset code is incorrect or has expired. Ask an Administrator for a new one.');
         }
         RateLimiter::clear($this->key('reset', $email, $ip));
-        RateLimiter::clear($this->key('login', $email, $ip)); // a fresh password unlocks the login too
+        RateLimiter::clear($this->key('login', $email, $ip)); // after a reset they can log in again right away
     }
 
-    /** A logged-in user changes their own password; other sessions are logged out. */
+    /** A logged-in user changes their own password. Their other sessions (other devices) get logged out. */
     public function changePassword(int $userId, array $in): void
     {
         $current = $in['current_password'] ?? null;
@@ -163,7 +163,7 @@ class UserService
         return User::find($id) ?? throw ApiException::notFound('User not found.');
     }
 
-    /* ---------------- throttling with Laravel's RateLimiter (file cache) ---------------- */
+    /* ---------------- login limit using Laravel's RateLimiter (stored in the file cache) ---------------- */
 
     private function key(string $scope, string $email, string $ip): string
     {

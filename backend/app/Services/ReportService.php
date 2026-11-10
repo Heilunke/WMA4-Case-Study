@@ -8,7 +8,7 @@ use App\Models\User;
 use App\Support\Format;
 use Illuminate\Support\Facades\DB;
 
-/** Dashboard / report numbers, aggregated in SQL. */
+/** Computes the numbers for the admin dashboard and the Reports page using SQL (COUNT and SUM). */
 class ReportService
 {
     public function build(): array
@@ -18,7 +18,7 @@ class ReportService
             $byStatus[$row->reservation_status] = (int) $row->c;
         }
 
-        // One row per event. Cancelled reservations never count toward reserved/confirmed/revenue/check-in.
+        // One row per event. We don't count cancelled reservations in the reserved, confirmed, revenue or check-in totals.
         $rows = DB::select("
             SELECT e.*,
                    COALESCE((SELECT SUM(t.quantity_available + t.quantity_sold) FROM ticket_types t WHERE t.event_ID = e.event_ID), 0) AS capacity,

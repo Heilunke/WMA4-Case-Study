@@ -4,14 +4,14 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-/* EVENTS — created by an Administrator. */
+/* EVENTS table - the events that the admin creates. */
 return new class extends Migration
 {
     public function up(): void
     {
         Schema::create('events', function (Blueprint $table) {
             $table->increments('event_ID');
-            $table->unsignedInteger('user_ID');                       // the Administrator who created the event
+            $table->unsignedInteger('user_ID');                       // the admin who created the event
             $table->string('event_name', 150);
             $table->string('category', 50)->default('General');
             $table->text('description')->nullable();

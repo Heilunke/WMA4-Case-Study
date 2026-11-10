@@ -11,9 +11,9 @@ use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 
 /**
- * Turns models / rows into the exact JSON shapes the front end consumes (js/store.js reads
- * these field names directly).
- * MySQL DECIMAL arrives as a string, so values are cast explicitly; UTC timestamps become ISO-8601.
+ * Changes the database rows into the JSON format that the frontend uses (js/store.js uses these exact names).
+ * We cast the numbers ourselves because MySQL gives DECIMAL values as text,
+ * and we turn the UTC dates into ISO format so JavaScript can read them.
  */
 final class Format
 {

@@ -10,10 +10,10 @@ use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * Runs on every /api request:
- *  - rejects oversized or malformed JSON bodies (413 / 400),
- *  - releases seats of unpaid Pending reservations past the hold window (never breaks the request),
- *  - adds no-sniff / no-store headers to every response.
+ * This runs on every /api request. It:
+ *  - rejects requests that are too big (413) or have broken JSON (400),
+ *  - cancels the unpaid Pending reservations that are past 48 hours (if this fails, the request still continues),
+ *  - adds security headers so the browser doesn't guess the content type or cache the data.
  */
 class ApiRequest
 {

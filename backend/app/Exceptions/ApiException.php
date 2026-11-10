@@ -5,9 +5,10 @@ namespace App\Exceptions;
 use RuntimeException;
 
 /**
- * An error that maps onto an HTTP status and the JSON body {"error":{"message","code"[,"fields"]}}.
- * Rendered in bootstrap/app.php. Named constructors for each HTTP meaning
- * (validation 422, unauthorized 401, forbidden 403, notFound 404, conflict 409 → soldOut 409).
+ * Our own error class. It has the HTTP status code and the message, and bootstrap/app.php turns it
+ * into JSON like {"error":{"message": ..., "code": ...}}.
+ * Shortcuts: validation (422), unauthorized (401), forbidden (403), notFound (404),
+ * conflict (409) and soldOut (also 409).
  */
 class ApiException extends RuntimeException
 {

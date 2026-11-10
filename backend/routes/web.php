@@ -1,6 +1,6 @@
 <?php
 
 /*
- * No server-rendered pages: the UI is the static frontend/ folder (served by router.php or Apache),
- * and the JSON API is in routes/api.php under /api.
+ * We don't use Blade pages. Our pages are in the frontend/ folder (served by router.php or Apache),
+ * and the API routes are in routes/api.php.
  */

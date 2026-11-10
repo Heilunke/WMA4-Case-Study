@@ -15,16 +15,17 @@ use DateTimeZone;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Reservations, inventory and e-ticket issuing.
+ * This is where most of the reservation rules are: reserving, confirming, cancelling,
+ * recording payments, check-in and issuing the e-tickets.
  *
- * Inventory rule (panel comment #5): PENDING and CONFIRMED reservations HOLD seats
- * (quantity_available is reduced when the reservation is submitted); CANCELLED releases them.
- * Every change to ticket_types runs inside DB::transaction() after lockForUpdate() on the
- * ticket-type row (SELECT … FOR UPDATE), so two attendees can never oversell the last ticket.
+ * Seat rule (from the panel's comment): Pending and Confirmed reservations both hold their seats,
+ * meaning quantity_available goes down as soon as the attendee submits. Cancelling gives the seats back.
+ * Every time we change the seats we use DB::transaction() and lockForUpdate() on the ticket type row
+ * (SELECT ... FOR UPDATE). This way two people can't buy the same last ticket at the same time.
  */
 class ReservationService
 {
-    private const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no I, O, 0, 1
+    private const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // we removed I, O, 0 and 1 because they look alike
 
     /** @return int reservation_ID */
     public function reserve(int $userId, array $in): int
@@ -35,7 +36,7 @@ class ReservationService
         $attendees = $this->validateAttendees($in['attendees'] ?? null, $qty);
 
         return DB::transaction(function () use ($userId, $ticketId, $qty, $method, $attendees) {
-            // Lock the ticket-type row: concurrent reservations for it queue up here.
+            // Lock the ticket type row first. If two people reserve at the same time, the second one waits here.
             $ticket = TicketType::lockForUpdate()->find($ticketId) ?? throw ApiException::notFound('Ticket type not found.');
             $event = $ticket->event;
 
@@ -63,10 +64,10 @@ class ReservationService
                 'reservation_status' => 'pending',
                 'reservation_date'   => $now,
             ]);
-            // Exactly one attendee row per ticket (panel comment #6).
+            // One attendee row for every ticket (from the panel's comment).
             $reservation->attendees()->createMany($attendees);
 
-            // Payment is a record only – no gateway (panel comment #4). Free events are paid by definition.
+            // No online payment, we only keep a record of it. Free events are automatically marked as paid.
             $free = $total == 0.0;
             $reservation->payment()->create([
                 'amount'         => $total,
@@ -98,7 +99,7 @@ class ReservationService
         return $out;
     }
 
-    /** Confirms a pending reservation and issues one unique e-ticket code per attendee. */
+    /** Confirms a pending reservation and gives every attendee their own unique ticket code. */
     public function confirm(int $reservationId): void
     {
         DB::transaction(function () use ($reservationId) {
@@ -119,7 +120,7 @@ class ReservationService
         });
     }
 
-    /** TKT-<reservation>-<n>-<8 random chars>; retried in the (very unlikely) event of a collision. */
+    /** Makes a code like TKT-005-1-K7QM4XRP. If the code somehow already exists, we just make a new one. */
     private function newTicketCode(int $reservationId, int $n): string
     {
         do {
@@ -133,8 +134,9 @@ class ReservationService
     }
 
     /**
-     * Cancels a reservation, releases its seats and voids its tickets. Attendees may cancel only their
-     * own PENDING reservations; Administrators any reservation with no checked-in attendee.
+     * Cancels a reservation, gives back the seats and removes the ticket codes.
+     * Attendees can only cancel their own reservations while they are still Pending.
+     * The admin can cancel any reservation as long as nobody has checked in yet.
      */
     public function cancel(int $reservationId, User $actor): void
     {
@@ -142,7 +144,7 @@ class ReservationService
             $r = $this->lockReservation($reservationId);
             if (!$actor->isAdmin()) {
                 if ((int) $r->user_ID !== (int) $actor->user_ID) {
-                    throw ApiException::notFound('Reservation not found.'); // do not reveal other people's ids
+                    throw ApiException::notFound('Reservation not found.'); // we say "not found" so they can't tell it belongs to someone else
                 }
                 if ($r->reservation_status === 'confirmed') {
                     throw ApiException::forbidden('A confirmed reservation can only be cancelled by an Administrator.');
@@ -158,10 +160,10 @@ class ReservationService
         });
     }
 
-    /** Cancels a LOCKED reservation: releases its seats and voids its tickets. */
+    /** Does the actual cancelling (the reservation must already be locked): seats back, codes removed. */
     private function release(Reservation $r): void
     {
-        // Lock order: reservation, then ticket type. reserve() only ever locks the ticket type, so no cycle.
+        // We always lock the reservation first and then the ticket type, so two requests won't get stuck waiting on each other.
         $qty = (int) $r->quantity;
         TicketType::lockForUpdate()->find($r->ticket_ID);
         TicketType::whereKey($r->ticket_ID)->update([
@@ -169,7 +171,7 @@ class ReservationService
             'quantity_sold'      => DB::raw('quantity_sold - ' . $qty),
         ]);
         $r->update(['reservation_status' => 'cancelled']);
-        AttendeeDetail::where('reservation_ID', $r->reservation_ID)->update(['ticket_code' => null]); // ticket voided
+        AttendeeDetail::where('reservation_ID', $r->reservation_ID)->update(['ticket_code' => null]); // the tickets can't be used anymore
     }
 
     public static function holdHours(): int
@@ -178,8 +180,8 @@ class ReservationService
     }
 
     /**
-     * Automatic expiry: cancels Pending reservations still UNPAID after the hold window and gives
-     * their seats back. Each one is its own short transaction, re-checked under lock.
+     * Auto-cancel: if a Pending reservation is still unpaid after the hold time (48 hours by default),
+     * we cancel it and give the seats back. Paid ones are left alone so the admin can still confirm them.
      */
     public function expireStale(): int
     {
@@ -198,7 +200,7 @@ class ReservationService
                 $r = $this->lockReservation((int) $rid);
                 $paid = Payment::where('reservation_ID', $rid)->lockForUpdate()->value('payment_status');
                 if ($r->reservation_status !== 'pending' || $paid !== 'unpaid' || $r->reservation_date >= $cutoff) {
-                    return 0; // an Administrator confirmed or recorded payment meanwhile
+                    return 0; // the admin already confirmed it or recorded the payment, so we skip it
                 }
                 $this->release($r);
                 return 1;
@@ -207,7 +209,7 @@ class ReservationService
         return $expired;
     }
 
-    /** Administrator records that payment was received (cash / bank / e-wallet). */
+    /** The admin records that the payment was received (cash, bank transfer, GCash, etc.). */
     public function markPaid(int $reservationId, mixed $method, int $adminId): void
     {
         $method = Validator::string($method ?? 'Cash', 'Payment method', 1, 100);
@@ -225,7 +227,7 @@ class ReservationService
         });
     }
 
-    /** Validates a ticket code at the entrance and admits the attendee (panel comment #7). */
+    /** Checks a ticket code at the entrance and lets the attendee in if it's valid (from the panel's comment). */
     public function checkIn(mixed $code, mixed $eventId, int $adminId): array
     {
         $code = strtoupper(trim(is_string($code) ? $code : ''));
@@ -235,7 +237,7 @@ class ReservationService
         $eventId = ($eventId === null || $eventId === '') ? null : Validator::int($eventId, 'Event', 1, PHP_INT_MAX);
 
         return DB::transaction(function () use ($code, $eventId, $adminId) {
-            // lockForUpdate: if the same code is scanned twice at once, one request waits and sees "already checked in".
+            // We lock the row so if the same code is scanned twice at the same time, the second scan says "already checked in".
             $a = AttendeeDetail::where('ticket_code', $code)->lockForUpdate()->first();
             if (!$a) {
                 return ['level' => 'danger', 'code' => 'invalid', 'message' => 'Invalid ticket — code not found or ticket was voided.'];
@@ -258,12 +260,12 @@ class ReservationService
         });
     }
 
-    /** Reverses a mistaken check-in. Only a checked-in attendee of a confirmed reservation can be undone. */
+    /** Undo button for a wrong check-in. Only works if the attendee is checked in and the reservation is confirmed. */
     public function undoCheckIn(int $attendeeId): void
     {
         DB::transaction(function () use ($attendeeId) {
             $rid = AttendeeDetail::where('attendee_ID', $attendeeId)->value('reservation_ID') ?? throw ApiException::notFound('Attendee not found.');
-            $r = $this->lockReservation((int) $rid);  // same lock order as cancel/confirm
+            $r = $this->lockReservation((int) $rid);  // same locking order as cancel and confirm
             $a = AttendeeDetail::lockForUpdate()->find($attendeeId);
             if ((int) $a->status !== 1) {
                 throw ApiException::conflict('This attendee is not checked in.', 'not_checked_in');

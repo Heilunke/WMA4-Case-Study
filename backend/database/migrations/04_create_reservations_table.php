@@ -5,14 +5,14 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-/* RESERVATIONS — shown as RSV-### in the UI. */
+/* RESERVATIONS table - shown as RSV-### on the pages. */
 return new class extends Migration
 {
     public function up(): void
     {
         Schema::create('reservations', function (Blueprint $table) {
             $table->increments('reservation_ID');
-            $table->unsignedInteger('user_ID');                       // the attendee who booked
+            $table->unsignedInteger('user_ID');                       // the attendee who made the reservation
             $table->unsignedInteger('ticket_ID');
             $table->unsignedTinyInteger('quantity');
             $table->decimal('total_amount', 8, 2);

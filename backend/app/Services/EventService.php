@@ -10,13 +10,14 @@ use App\Support\Format;
 use App\Support\Validator;
 use Illuminate\Support\Facades\DB;
 
-/** Event catalogue (any user) and event / ticket-type management (Administrator). */
+/** Handles the events: listing them for everyone, and adding/editing/deleting them for the admin. */
 class EventService
 {
     /**
-     * GET /api/events — events ordered by date and time, each with its ticket types and seat counts.
-     * Optional filters: q (name or venue contains), category (exact), date (exact day),
-     * from (on or after this day).
+     * GET /api/events - returns the events sorted by date and time, together with their ticket types
+     * and how many seats are left. You can also search and filter:
+     *   q = search the event name or venue, category = exact category,
+     *   date = events on that day only, from = events on or after that day.
      */
     public function catalog(array $filters): array
     {
@@ -39,7 +40,7 @@ class EventService
         return $query->get()->map(fn (Event $e) => $this->withTickets($e))->all();
     }
 
-    /** GET /api/events/{id} — one event with its ticket types and seat counts. */
+    /** GET /api/events/{id} - returns one event with its ticket types and seat counts. */
     public function find(int $eventId): array
     {
         $event = Event::with(['ticketTypes' => fn ($t) => $t->orderBy('ticket_ID')])->find($eventId)
@@ -47,7 +48,7 @@ class EventService
         return $this->withTickets($event);
     }
 
-    /** Event JSON + ticket_types + seats {left, total, sold} (seats held by Pending and Confirmed reservations). */
+    /** Builds the event data we send back, plus its ticket types and the seat totals (left, total, sold). */
     private function withTickets(Event $event): array
     {
         $types = $event->ticketTypes;
@@ -60,8 +61,9 @@ class EventService
     }
 
     /**
-     * Creates or updates an event and reconciles its ticket types in one transaction.
-     * quantity_available is always recomputed as capacity − seats already held.
+     * Saves an event (new or edited) and its ticket types. Everything is done inside one transaction
+     * so if something fails, nothing is saved halfway.
+     * Note: quantity_available is always computed again as (capacity - seats already reserved).
      */
     public function save(?int $eventId, array $in, int $adminId): int
     {
@@ -152,9 +154,9 @@ class EventService
             if ($event->reservations()->where('reservation_status', '<>', 'cancelled')->exists()) {
                 throw ApiException::conflict('This event still has active reservations. Cancel them first.');
             }
-            // Only cancelled reservations remain; their attendees/payments cascade-delete with them.
+            // At this point only cancelled reservations are left. Their attendees and payments are deleted with them (cascade).
             Reservation::whereIn('ticket_ID', TicketType::where('event_ID', $eventId)->select('ticket_ID'))->delete();
-            $event->delete(); // ticket_types cascade
+            $event->delete(); // the ticket types are also deleted because of the cascade
         });
     }
 }

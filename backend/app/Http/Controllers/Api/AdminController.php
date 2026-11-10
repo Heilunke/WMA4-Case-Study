@@ -10,7 +10,7 @@ use App\Support\Validator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
-/** Reports and user management (Administrator). */
+/** Admin only: reports and managing the users. */
 class AdminController extends Controller
 {
     public function __construct(private UserService $users)
@@ -29,13 +29,13 @@ class AdminController extends Controller
         return $this->json(['users' => $snapshots->forUser($this->user())['users']]);
     }
 
-    /** PUT /users/{id}/role — {role}; the last Administrator cannot be demoted. */
+    /** PUT /users/{id}/role - change a user's role. We don't allow removing the last admin. */
     public function setRole(Request $request, string $id): JsonResponse
     {
         return $this->json(['user' => $this->users->setRole(Validator::id($id), $request->json('role'))]);
     }
 
-    /** POST /users/{id}/reset-code — one-time password reset code to hand to the user. */
+    /** POST /users/{id}/reset-code - makes a one-time reset code that the admin gives to the user. */
     public function resetCode(string $id): JsonResponse
     {
         return $this->json($this->users->issueResetCode(Validator::id($id)));

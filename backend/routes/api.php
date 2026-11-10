@@ -9,15 +9,15 @@ use App\Http\Controllers\Api\ReservationController;
 use Illuminate\Support\Facades\Route;
 
 /*
- * The E-Ticket REST API, served under /api with the 'eticket' middleware group (session cookie,
- * JSON checks). Called by the frontend (frontend/js/store.js), the Postman collection (postman/) and
- * the API smoke test (tests/api-smoke.mjs).
+ * Our REST API. All of these are under /api and use the 'eticket' middleware group (session + JSON checks).
+ * The frontend (frontend/js/store.js), our Postman collection and the API test (tests/api-smoke.mjs) all call these.
  *
- * Access levels: public | eticket.auth (any login) | eticket.auth:admin | eticket.auth:attendee.
- * eticket.csrf: state-changing requests must send the X-CSRF-Token header.
+ * Who can access:  public = no login needed, eticket.auth = any logged-in user,
+ *                  eticket.auth:admin = admin only, eticket.auth:attendee = attendee only.
+ * eticket.csrf = requests that change something must send the X-CSRF-Token header.
  */
 
-/* ---------------- public ---------------- */
+/* ---------------- no login needed ---------------- */
 Route::post('/auth/register', [AuthController::class, 'register']);
 Route::post('/auth/login', [AuthController::class, 'login']);
 Route::post('/auth/logout', [AuthController::class, 'logout']);
@@ -30,18 +30,18 @@ Route::middleware(['eticket.auth', 'eticket.csrf'])->group(function () {
     Route::get('/bootstrap', BootstrapController::class);
     Route::get('/events', [EventController::class, 'index']);            // ?q=&category=&date=&from=
     Route::get('/events/{id}', [EventController::class, 'show']);
-    Route::get('/reservations', [ReservationController::class, 'index']); // ?status=&q= (attendees: own only)
+    Route::get('/reservations', [ReservationController::class, 'index']); // ?status=&q= (attendees only see their own)
     Route::get('/reservations/{id}', [ReservationController::class, 'show']);
     Route::post('/reservations/{id}/cancel', [ReservationController::class, 'cancel']);
     Route::get('/reservations/{id}/ticket', [ReservationController::class, 'ticket']);
 });
 
-/* ---------------- attendees ---------------- */
+/* ---------------- attendees only ---------------- */
 Route::middleware(['eticket.auth:attendee', 'eticket.csrf'])->group(function () {
     Route::post('/reservations', [ReservationController::class, 'store']);
 });
 
-/* ---------------- Administrators ---------------- */
+/* ---------------- admin only ---------------- */
 Route::middleware(['eticket.auth:admin', 'eticket.csrf'])->group(function () {
     Route::post('/events', [EventController::class, 'store']);
     Route::put('/events/{id}', [EventController::class, 'update']);

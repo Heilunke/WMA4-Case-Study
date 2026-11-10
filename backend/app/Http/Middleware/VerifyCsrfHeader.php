@@ -8,9 +8,8 @@ use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * CSRF protection for the JSON API: every state-changing request on a protected route must send the
- * per-session token (returned by login / register / me / bootstrap) in the X-CSRF-Token header.
- * The frontend (js/store.js) sends it automatically.
+ * CSRF protection. Every request that changes something (POST, PUT, DELETE) must send the session's
+ * token in the X-CSRF-Token header. We give the token after login, and js/store.js sends it automatically.
  */
 class VerifyCsrfHeader
 {

@@ -5,7 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-/** The payment record of a reservation (no online gateway: an Administrator records it). */
+/** The payment of a reservation. There's no online payment, the admin just records it here. */
 class Payment extends Model
 {
     protected $table = 'payments';
@@ -18,7 +18,7 @@ class Payment extends Model
         return $this->belongsTo(Reservation::class, 'reservation_ID', 'reservation_ID');
     }
 
-    /** The Administrator who recorded the payment. */
+    /** The admin who recorded the payment. */
     public function recordedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'recorded_by', 'user_ID');
