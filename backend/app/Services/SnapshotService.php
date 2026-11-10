@@ -39,6 +39,49 @@ class SnapshotService
         return $data;
     }
 
+    /**
+     * GET /api/reservations — newest first, joined with event, ticket type, payment, booker and attendees.
+     * Administrators get every reservation; attendees only their own.
+     * Optional filters: status (pending | confirmed | cancelled) and q (searches RSV code, booker, event, attendee names).
+     */
+    public function reservationList(User $user, array $filters): array
+    {
+        $query = Reservation::with(['user', 'ticketType.event', 'payment', 'attendees'])->orderByDesc('reservation_ID');
+        if (!$user->isAdmin()) {
+            $query->where('user_ID', $user->user_ID);
+        }
+        $status = (string) ($filters['status'] ?? '');
+        if ($status !== '') {
+            if (!in_array($status, ['pending', 'confirmed', 'cancelled'], true)) {
+                throw ApiException::validation('Status must be pending, confirmed or cancelled.');
+            }
+            $query->where('reservation_status', $status);
+        }
+        $q = trim((string) ($filters['q'] ?? ''));
+        if ($q !== '') {
+            $like = '%' . $q . '%';
+            $id = preg_match('/^(?:RSV-)?0*(\d+)$/i', $q, $m) ? (int) $m[1] : null; // "RSV-003" or "3"
+            $query->where(function ($w) use ($like, $id) {
+                $w->whereHas('user', fn ($u) => $u->where('full_Name', 'like', $like))
+                    ->orWhereHas('ticketType.event', fn ($e) => $e->where('event_name', 'like', $like))
+                    ->orWhereHas('attendees', fn ($a) => $a->where('full_name', 'like', $like));
+                if ($id !== null) {
+                    $w->orWhere('reservation_ID', $id);
+                }
+            });
+        }
+        return $query->get()->map(fn (Reservation $r) => [
+            'reservation' => Format::reservation($r),
+            'code'        => sprintf('RSV-%03d', $r->reservation_ID),
+            'event'       => Format::event($r->ticketType->event),
+            'ticket_type' => Format::ticketType($r->ticketType),
+            'payment'     => $r->payment ? Format::payment($r->payment) : null,
+            'user'        => Format::user($r->user),
+            'attendees'   => $r->attendees->map(fn ($a) => Format::attendee($a))->all(),
+            'checked_in'  => $r->attendees->where('status', 1)->count(),
+        ])->all();
+    }
+
     /** One reservation with its attendees, payment, ticket type and event — via Eloquent relationships. */
     public function reservationFor(int $id, User $user): array
     {

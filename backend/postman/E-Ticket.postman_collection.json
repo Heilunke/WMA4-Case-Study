@@ -762,6 +762,77 @@
       "name": "Data",
       "item": [
         {
+          "name": "List events with filters (q, category, date, from)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"every event has ticket types and seats\", () => pm.response.json().events.forEach(e => { pm.expect(e.ticket_types).to.be.an(\"array\"); pm.expect(e.seats.total).to.eql(e.seats.left + e.seats.sold); }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/events?category=Workshop&q=&from=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "events"
+              ],
+              "query": [
+                {
+                  "key": "category",
+                  "value": "Workshop"
+                },
+                {
+                  "key": "q",
+                  "value": ""
+                },
+                {
+                  "key": "from",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get one event",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"has ticket types\", () => pm.expect(pm.response.json().event.ticket_types).to.be.an(\"array\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/events/{{eventId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "events",
+                "{{eventId}}"
+              ]
+            }
+          }
+        },
+        {
           "name": "Bootstrap (role-scoped snapshot)",
           "event": [
             {
@@ -971,6 +1042,44 @@
     {
       "name": "Reservations",
       "item": [
+        {
+          "name": "List reservations with filters (status, q)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"only pending\", () => pm.response.json().reservations.forEach(x => pm.expect(x.reservation.reservation_status).to.eql(\"pending\")));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reservations?status=pending&q=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reservations"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "pending"
+                },
+                {
+                  "key": "q",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
         {
           "name": "Reserve tickets (attendee)",
           "event": [

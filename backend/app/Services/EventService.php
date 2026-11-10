@@ -10,9 +10,55 @@ use App\Support\Format;
 use App\Support\Validator;
 use Illuminate\Support\Facades\DB;
 
-/** Event and ticket-type management (Administrator). */
+/** Event catalogue (any user) and event / ticket-type management (Administrator). */
 class EventService
 {
+    /**
+     * GET /api/events — events ordered by date and time, each with its ticket types and seat counts.
+     * Optional filters: q (name or venue contains), category (exact), date (exact day),
+     * from (on or after this day).
+     */
+    public function catalog(array $filters): array
+    {
+        $query = Event::with(['ticketTypes' => fn ($t) => $t->orderBy('ticket_ID')])
+            ->orderBy('event_date')->orderBy('event_time')->orderBy('event_ID');
+
+        $q = trim((string) ($filters['q'] ?? ''));
+        if ($q !== '') {
+            $query->where(fn ($w) => $w->where('event_name', 'like', '%' . $q . '%')->orWhere('venue', 'like', '%' . $q . '%'));
+        }
+        if (($filters['category'] ?? '') !== '') {
+            $query->where('category', Validator::string($filters['category'], 'Category', 1, 50));
+        }
+        if (($filters['date'] ?? '') !== '') {
+            $query->where('event_date', Validator::date($filters['date'], 'Date'));
+        }
+        if (($filters['from'] ?? '') !== '') {
+            $query->where('event_date', '>=', Validator::date($filters['from'], 'From date'));
+        }
+        return $query->get()->map(fn (Event $e) => $this->withTickets($e))->all();
+    }
+
+    /** GET /api/events/{id} — one event with its ticket types and seat counts. */
+    public function find(int $eventId): array
+    {
+        $event = Event::with(['ticketTypes' => fn ($t) => $t->orderBy('ticket_ID')])->find($eventId)
+            ?? throw ApiException::notFound('Event not found.');
+        return $this->withTickets($event);
+    }
+
+    /** Event JSON + ticket_types + seats {left, total, sold} (seats held by Pending and Confirmed reservations). */
+    private function withTickets(Event $event): array
+    {
+        $types = $event->ticketTypes;
+        $left = (int) $types->sum('quantity_available');
+        $sold = (int) $types->sum('quantity_sold');
+        return Format::event($event) + [
+            'ticket_types' => $types->map(fn (TicketType $t) => Format::ticketType($t))->all(),
+            'seats'        => ['left' => $left, 'total' => $left + $sold, 'sold' => $sold],
+        ];
+    }
+
     /**
      * Creates or updates an event and reconciles its ticket types in one transaction.
      * quantity_available is always recomputed as capacity − seats already held.

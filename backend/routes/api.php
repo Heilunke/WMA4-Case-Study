@@ -28,7 +28,9 @@ Route::middleware(['eticket.auth', 'eticket.csrf'])->group(function () {
     Route::get('/auth/me', [AuthController::class, 'me']);
     Route::post('/auth/change-password', [AuthController::class, 'changePassword']);
     Route::get('/bootstrap', BootstrapController::class);
-    Route::get('/events', [EventController::class, 'index']);
+    Route::get('/events', [EventController::class, 'index']);            // ?q=&category=&date=&from=
+    Route::get('/events/{id}', [EventController::class, 'show']);
+    Route::get('/reservations', [ReservationController::class, 'index']); // ?status=&q= (attendees: own only)
     Route::get('/reservations/{id}', [ReservationController::class, 'show']);
     Route::post('/reservations/{id}/cancel', [ReservationController::class, 'cancel']);
     Route::get('/reservations/{id}/ticket', [ReservationController::class, 'ticket']);

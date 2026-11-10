@@ -17,6 +17,12 @@ class ReservationController extends Controller
     {
     }
 
+    /** GET /reservations?status=&q= — admins: all; attendees: only their own. */
+    public function index(Request $request): JsonResponse
+    {
+        return $this->json(['reservations' => $this->snapshots->reservationList($this->user(), $request->query())]);
+    }
+
     /** POST /reservations (attendee) */
     public function store(Request $request): JsonResponse
     {

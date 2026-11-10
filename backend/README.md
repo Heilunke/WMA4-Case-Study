@@ -19,6 +19,7 @@ php artisan key:generate              # first time only
 
 # create the "eticket" database first (phpMyAdmin → New, or: CREATE DATABASE eticket), then:
 php artisan migrate:fresh --seed      # DROPS and recreates the tables + demo data
+#   (or import database/eticket.sql in phpMyAdmin instead: same tables + demo data)
 
 cd ..
 php -S localhost:8000 -t frontend backend/router.php
@@ -47,7 +48,7 @@ The API smoke test needs fresh demo data and a running server:
 ```bash
 php backend/artisan migrate:fresh --seed && php backend/artisan cache:clear
 php -S localhost:8000 -t frontend backend/router.php      # in a second terminal
-node backend/tests/api-smoke.mjs                          # must end with: 110 passed, 0 failed
+node backend/tests/api-smoke.mjs                          # must end with: 126 passed, 0 failed
 ```
 
 The test creates its own data, so reseed before running it again.
@@ -60,7 +61,7 @@ folder is self-contained.
 
 | Concept | File(s) |
 |---|---|
-| **Migrations** (schema, keys, FKs, CHECK constraints) | `database/migrations/2026_11_09_00000{1..6}_create_*_table.php` |
+| **Migrations** (schema, keys, FKs, CHECK constraints) | `database/migrations/01_create_users_table.php` … `06_create_payments_table.php` (the number sets the order: a table is created after the tables its foreign keys point to) |
 | **Eloquent models + relationships** | `app/Models/` — `User`, `Event`, `TicketType`, `Reservation`, `AttendeeDetail`, `Payment` |
 | **Seeder** (demo data through the real services) | `database/seeders/DatabaseSeeder.php` |
 | **Routes** (access level on each group) | `routes/api.php` |
@@ -131,9 +132,11 @@ login / register / `/auth/me` / `/bootstrap`).
 | `POST /auth/reset-password` | public | `{email, code, password}` with an Administrator-issued code (rate-limited) |
 | `POST /auth/change-password` | user | `{current_password, password}`; logs out the account's other sessions |
 | `GET /bootstrap` | user | Everything the caller may see (admins: all + users + report; attendees: catalogue + own reservations) |
-| `GET /events` | user | Event list |
+| `GET /events?q=&category=&date=&from=` | user | Events ordered by date, each with its ticket types and seats `{left, total, sold}`; optional search and filters |
+| `GET /events/{id}` | user | One event with its ticket types and seats |
 | `POST /events` · `PUT /events/{id}` · `DELETE /events/{id}` | admin | Event CRUD with ticket types `[{ticket_ID?, type_name, price, total}]` |
 | `POST /reservations` | attendee | `{ticket_ID, quantity, payment_method, attendees:[{full_name, contact_number}]}` |
+| `GET /reservations?status=&q=` | user | Reservations newest first, joined with event, ticket type, payment, booker and attendees (admins: all; attendees: own only); filter by status, search by RSV code or name |
 | `GET /reservations/{id}` | owner / admin | Reservation + attendees + payment |
 | `POST /reservations/{id}/confirm` | admin | Confirm and issue e-tickets |
 | `POST /reservations/{id}/cancel` | owner (pending) / admin | Cancel, release seats, void tickets |
@@ -173,9 +176,10 @@ backend/
   config/eticket.php       business settings
   database/migrations/     the six tables
   database/seeders/        demo data
+  database/eticket.sql     exported database (schema + demo data) for phpMyAdmin import
   routes/api.php           the API surface
   public/index.php         Laravel entry point (Apache / XAMPP)
   router.php               `php -S` router: frontend + /api on one origin
-  tests/api-smoke.mjs      end-to-end API test (110 checks)
+  tests/api-smoke.mjs      end-to-end API test (126 checks)
   postman/                 Postman collection
 ```

@@ -245,6 +245,41 @@ eq('status totals add up', r.totals.reservations, r.byStatus.confirmed + r.bySta
 const wsRow = r.perEvent.find(p => p.event.event_ID === ws.event_ID);
 eq('workshop row: capacity 30, reserved 20, confirmed 1, revenue 100', [wsRow.capacity, wsRow.reserved, wsRow.confirmed, wsRow.revenue], [30, 20, 1, 100]);
 
+section('REST: lists, details and filters');
+r = await maria.call('GET', '/events');
+check('GET /events: each event has ticket types and seats (left + sold = total)', r.status === 200 && r.json.events.length >= 4
+  && r.json.events.every(e => Array.isArray(e.ticket_types) && e.seats.total === e.seats.left + e.seats.sold));
+check('GET /events is ordered by date', r.json.events.every((e, i, a) => !i || (a[i - 1].event_date + a[i - 1].event_time) <= (e.event_date + e.event_time)));
+r = await maria.call('GET', '/events?category=Workshop');
+check('filter events by category', r.json.events.length >= 1 && r.json.events.every(e => e.category === 'Workshop'));
+r = await maria.call('GET', '/events?q=summit');
+eq('search events by name', r.json.events.map(e => e.event_name), ['CCS Tech Summit']);
+r = await maria.call('GET', '/events?q=Amphitheater');
+eq('search events by venue', r.json.events.map(e => e.event_name), ['Campus Acoustic Night']);
+r = await maria.call('GET', '/events?from=' + day(20));
+check('filter events from a date', r.json.events.length >= 1 && r.json.events.every(e => e.event_date >= day(20)));
+eq('invalid date filter -> 422', (await maria.call('GET', '/events?date=2026-99-99')).status, 422);
+r = await maria.call('GET', '/events/' + ws.event_ID);
+eq('GET /events/{id} with its ticket types', [r.status, r.json.event.event_name, r.json.event.ticket_types.length], [200, ws.event_name, 1]);
+eq('GET /events/{id} unknown -> 404', (await maria.call('GET', '/events/99999')).status, 404);
+r = await maria.call('GET', '/reservations');
+check('GET /reservations: an attendee gets only their own', r.status === 200 && r.json.reservations.length > 0
+  && r.json.reservations.every(x => x.user.user_ID === mar.user.user_ID));
+r = await admin.call('GET', '/reservations');
+check('GET /reservations: admin gets all, newest first, joined with event/payment/attendees',
+  r.json.reservations.some(x => x.user.user_ID !== mar.user.user_ID)
+  && r.json.reservations.every((x, i, a) => !i || a[i - 1].reservation.reservation_ID > x.reservation.reservation_ID)
+  && r.json.reservations.every(x => /^RSV-\d{3}$/.test(x.code) && x.event && x.payment && Array.isArray(x.attendees)));
+r = await admin.call('GET', '/reservations?status=cancelled');
+check('filter reservations by status', r.json.reservations.length > 0 && r.json.reservations.every(x => x.reservation.reservation_status === 'cancelled'));
+r = await admin.call('GET', '/reservations?q=RSV-001');
+eq('search reservations by RSV code', r.json.reservations.map(x => x.code), ['RSV-001']);
+r = await admin.call('GET', '/reservations?q=Ana%20Reyes');
+check('search reservations by person', r.json.reservations.length >= 1
+  && r.json.reservations.every(x => x.user.full_Name.includes('Ana Reyes') || x.attendees.some(a => a.full_name.includes('Ana Reyes'))));
+eq('invalid status filter -> 422', (await admin.call('GET', '/reservations?status=paid')).status, 422);
+eq('GET /reservations not logged in -> 401', (await new Client().call('GET', '/reservations')).status, 401);
+
 section('Sessions');
 eq('logout -> 204', (await maria.call('POST', '/auth/logout')).status, 204);
 eq('session is dead after logout', (await maria.call('GET', '/bootstrap')).status, 401);

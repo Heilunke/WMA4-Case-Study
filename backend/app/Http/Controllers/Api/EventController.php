@@ -4,22 +4,28 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Services\EventService;
-use App\Services\SnapshotService;
 use App\Support\Validator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 
-/** /api/events — list (any user) and create / update / delete (Administrator). */
+/** /api/events — list and detail (any user); create / update / delete (Administrator). */
 class EventController extends Controller
 {
     public function __construct(private EventService $events)
     {
     }
 
-    public function index(SnapshotService $snapshots): JsonResponse
+    /** GET /events?q=&category=&date=&from= — each event with its ticket types and seat counts. */
+    public function index(Request $request): JsonResponse
     {
-        return $this->json(['events' => $snapshots->forUser($this->user())['events']]);
+        return $this->json(['events' => $this->events->catalog($request->query())]);
+    }
+
+    /** GET /events/{id} */
+    public function show(string $id): JsonResponse
+    {
+        return $this->json(['event' => $this->events->find(Validator::id($id))]);
     }
 
     public function store(Request $request): JsonResponse
